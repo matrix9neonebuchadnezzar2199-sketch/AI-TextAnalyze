@@ -118,6 +118,12 @@ class ModelManager:
             "active_engine": self._active.value,
         }
 
+    def mt_is_loaded(self) -> bool:
+        return self._mt is not None
+
+    def ner_is_loaded(self) -> bool:
+        return self._ner is not None
+
     def unload_ner(self) -> None:
         """Release NER engine and session."""
         if self._ner is not None:

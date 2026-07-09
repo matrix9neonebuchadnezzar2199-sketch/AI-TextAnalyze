@@ -51,8 +51,30 @@ class Api:
 
     def get_model_status(self) -> dict[str, Any]:
         try:
-            return self._ok(**self._manager.status_dict())
+            status = self._manager.status_dict()
+            status["mt_loaded"] = self._manager.mt_is_loaded()
+            status["ner_loaded"] = self._manager.ner_is_loaded()
+            return self._ok(**status)
         except Exception as exc:
+            return self._err(str(exc))
+
+    def warmup_mt(self) -> dict[str, Any]:
+        """Preload translation model once per session (optional startup)."""
+        if self._manager.mt_model() is None:
+            return self._err("翻訳モデルが見つかりません")
+        if self._manager.mt_is_loaded():
+            return self._ok(warmed=True, cached=True)
+
+        try:
+            self._show_progress("翻訳モデル起動中…", 0, 0)
+            self._set_status("翻訳モデルを起動中…")
+            self._manager.load_mt()
+            self._hide_progress()
+            self._set_status("翻訳モデル準備完了")
+            return self._ok(warmed=True, cached=False)
+        except Exception as exc:
+            logger.exception("warmup_mt failed")
+            self._hide_progress()
             return self._err(str(exc))
 
     def pick_and_read_file(self) -> dict[str, Any]:
@@ -93,17 +115,18 @@ class Api:
             return self._err("NER モデルが見つかりません。model/ に GLiNER ONNX を配置してください。")
 
         try:
-            self._show_progress("NER モデルロード中…", 0, 0)
-            self._set_status("NER モデルをロード中…")
+            if not self._manager.ner_is_loaded():
+                self._show_progress("NER モデルロード中…", 0, 0)
+                self._set_status("NER モデルをロード中…")
 
-            def _run(engine: Any) -> list[dict[str, Any]]:
-                def on_progress(current: int, total: int, _detail: str) -> None:
-                    self._show_progress("キーワード抽出中…", current, total)
-                    self._set_status(f"キーワード抽出中… {current}/{total}")
+            engine = self._manager.load_ner()
 
-                return engine.extract(text, on_progress=on_progress)
+            def on_progress(current: int, total: int, _detail: str) -> None:
+                self._show_progress("キーワード抽出中…", current, total)
+                self._set_status(f"キーワード抽出中… {current}/{total}")
 
-            keywords = self._manager.with_ner(_run)
+            keywords = engine.extract(text, on_progress=on_progress)
+            # NER はセッション中保持（翻訳時のみ排他で入れ替え）
             self._hide_progress()
             self._set_status(f"抽出完了（{len(keywords)} 件）")
             return self._ok(keywords=keywords)
@@ -124,8 +147,13 @@ class Api:
             if src == "auto":
                 resolved_src = detect_language(text)
 
-            self._show_progress("翻訳モデルロード中…", 0, 0)
-            self._set_status("翻訳モデルをロード中…")
+            if not self._manager.mt_is_loaded():
+                self._show_progress("翻訳モデルロード中…", 0, 0)
+                self._set_status("翻訳モデルをロード中…")
+            else:
+                self._show_progress("翻訳中…", 0, 0)
+                self._set_status("翻訳中…")
+
             engine = self._manager.load_mt()
 
             def on_progress(current: int, total: int, _piece: str) -> None:
@@ -138,7 +166,6 @@ class Api:
                 tgt,
                 on_progress=on_progress,
             )
-            # 再翻訳を速くするため MT は保持（NER 実行時に排他 unload）
             self._hide_progress()
             self._set_status("翻訳完了")
             return self._ok(text=result, src=resolved_src, tgt=tgt)

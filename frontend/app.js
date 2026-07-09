@@ -86,6 +86,15 @@ async function initApp() {
     modelStatus = res;
     updateModelBar();
     status("準備完了");
+    // 起動時に翻訳モデルを温存ロード（初回翻訳の10秒待ちを回避）
+    if (res.mt_available && !res.mt_loaded) {
+      apiCall("warmup_mt").then((warm) => {
+        if (warm.ok) {
+          modelStatus.mt_loaded = true;
+          status(warm.cached ? "翻訳モデル準備完了" : "翻訳モデル起動完了");
+        }
+      });
+    }
   } else {
     status(res.error || "モデル状態の取得に失敗");
   }
