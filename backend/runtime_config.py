@@ -6,12 +6,12 @@ import os
 
 
 def cpu_thread_count() -> int:
-    """Inference thread budget (default 2 — avoids saturating all cores)."""
-    raw = os.environ.get("AI_TEXTANALYZE_CPU_THREADS", "2")
+    """Inference thread budget (default 4 — balance speed vs system load)."""
+    raw = os.environ.get("AI_TEXTANALYZE_CPU_THREADS", "4")
     try:
         return max(1, min(8, int(raw)))
     except ValueError:
-        return 2
+        return 4
 
 
 def apply_cpu_thread_env() -> int:

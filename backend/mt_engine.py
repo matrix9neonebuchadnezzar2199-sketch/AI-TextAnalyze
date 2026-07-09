@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -18,10 +17,10 @@ NLLB_LANG_CODES: dict[str, str] = {
     "ko": "kor_Hang",
 }
 
-# 文ごとに短い休止を入れ UI/WebView の応答性を確保
-YIELD_SECONDS = 0.01
-
 ProgressCallback = Callable[[int, int, str], None]
+
+# CT2 はバッチ推論の方が逐次より大幅に速い
+TRANSLATE_BATCH_SIZE = 8
 MAX_SENTENCE_CHARS = 500
 
 
@@ -53,7 +52,6 @@ def iter_translation_units(text: str) -> list[tuple[int, str]]:
             if len(sentence) <= MAX_SENTENCE_CHARS:
                 units.append((para_idx, sentence))
                 continue
-            # 極端に長い文はさらに分割
             for i in range(0, len(sentence), MAX_SENTENCE_CHARS):
                 units.append((para_idx, sentence[i : i + MAX_SENTENCE_CHARS]))
     return units if units else [(0, text.strip())]
@@ -99,7 +97,7 @@ class MtEngine:
         *,
         on_progress: ProgressCallback | None = None,
     ) -> str:
-        """Translate text sentence by sentence, preserving paragraphs."""
+        """Translate text in batches, preserving paragraphs."""
         if self._translator is None or self._tokenizer is None:
             raise RuntimeError("MT engine is not loaded")
 
@@ -115,13 +113,16 @@ class MtEngine:
         paragraph_count = max((idx for idx, _ in units), default=0) + 1
         translated_by_para: dict[int, list[str]] = {i: [] for i in range(paragraph_count)}
 
-        for step, (para_idx, sentence) in enumerate(units, start=1):
-            piece = self._translate_sentence(sentence, src_code, tgt_code)
-            translated_by_para[para_idx].append(piece)
+        done = 0
+        for start in range(0, total, TRANSLATE_BATCH_SIZE):
+            batch = units[start : start + TRANSLATE_BATCH_SIZE]
+            sentences = [sentence for _, sentence in batch]
+            pieces = self._translate_batch(sentences, src_code, tgt_code)
+            for (para_idx, _), piece in zip(batch, pieces):
+                translated_by_para[para_idx].append(piece)
+            done += len(batch)
             if on_progress:
-                on_progress(step, total, piece)
-            if YIELD_SECONDS > 0:
-                time.sleep(YIELD_SECONDS)
+                on_progress(done, total, pieces[-1] if pieces else "")
 
         paragraphs = [
             "".join(translated_by_para[i]).strip()
@@ -130,39 +131,49 @@ class MtEngine:
         ]
         return "\n\n".join(paragraphs)
 
-    def _translate_sentence(
+    def _translate_batch(
         self,
-        sentence: str,
+        sentences: list[str],
         src_code: str | None,
         tgt_code: str,
-    ) -> str:
-        """Translate a single sentence with NLLB tokenizer + CT2."""
+    ) -> list[str]:
+        """Translate multiple sentences in one CT2 batch call."""
         assert self._translator is not None
         assert self._tokenizer is not None
+
+        if not sentences:
+            return []
 
         tokenizer = self._tokenizer
         if src_code:
             tokenizer.src_lang = src_code
 
-        source_tokens = tokenizer.convert_ids_to_tokens(tokenizer.encode(sentence))
+        sources = [
+            tokenizer.convert_ids_to_tokens(tokenizer.encode(sentence))
+            for sentence in sentences
+        ]
+        prefixes = [[tgt_code]] * len(sources)
         results = self._translator.translate_batch(
-            [source_tokens],
-            target_prefix=[[tgt_code]],
+            sources,
+            target_prefix=prefixes,
             beam_size=1,
-            max_batch_size=1,
+            max_batch_size=max(TRANSLATE_BATCH_SIZE, len(sources)),
             max_decoding_length=512,
         )
-        if not results or not results[0].hypotheses:
-            return ""
 
-        tokens = list(results[0].hypotheses[0])
-        if tokens and tokens[0] == tgt_code:
-            tokens = tokens[1:]
-        decoded = tokenizer.decode(
-            tokenizer.convert_tokens_to_ids(tokens),
-            skip_special_tokens=True,
-        ).strip()
-        # 日本語向け: 文末に句点が無ければ付与
-        if tgt_code == "jpn_Jpan" and decoded and decoded[-1] not in "。．！？":
-            decoded += "。"
+        decoded: list[str] = []
+        for result in results:
+            if not result.hypotheses:
+                decoded.append("")
+                continue
+            tokens = list(result.hypotheses[0])
+            if tokens and tokens[0] == tgt_code:
+                tokens = tokens[1:]
+            text = tokenizer.decode(
+                tokenizer.convert_tokens_to_ids(tokens),
+                skip_special_tokens=True,
+            ).strip()
+            if tgt_code == "jpn_Jpan" and text and text[-1] not in "。．！？":
+                text += "。"
+            decoded.append(text)
         return decoded

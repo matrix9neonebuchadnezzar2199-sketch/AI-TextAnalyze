@@ -138,7 +138,7 @@ class Api:
                 tgt,
                 on_progress=on_progress,
             )
-            self._manager.unload_mt()
+            # 再翻訳を速くするため MT は保持（NER 実行時に排他 unload）
             self._hide_progress()
             self._set_status("翻訳完了")
             return self._ok(text=result, src=resolved_src, tgt=tgt)
