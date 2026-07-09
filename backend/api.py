@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import traceback
 from typing import Any
@@ -21,7 +22,6 @@ class Api:
         self._window: Any = None
 
     def set_window(self, window: Any) -> None:
-        """Inject pywebview window for dialogs and status updates."""
         self._window = window
 
     def _ok(self, **payload: Any) -> dict[str, Any]:
@@ -31,24 +31,31 @@ class Api:
         logger.warning("API error: %s", message)
         return {"ok": False, "error": message}
 
-    def _set_status(self, message: str) -> None:
+    def _evaluate(self, js: str) -> None:
         if self._window is not None:
             try:
-                escaped = message.replace("\\", "\\\\").replace("'", "\\'")
-                self._window.evaluate_js(f"status('{escaped}')")
+                self._window.evaluate_js(js)
             except Exception:
-                logger.debug("Status update failed", exc_info=True)
+                logger.debug("evaluate_js failed", exc_info=True)
+
+    def _set_status(self, message: str) -> None:
+        payload = json.dumps(message, ensure_ascii=False)
+        self._evaluate(f"status({payload})")
+
+    def _show_progress(self, message: str, current: int = 0, total: int = 0) -> None:
+        payload = json.dumps(message, ensure_ascii=False)
+        self._evaluate(f"showProgress({payload}, {int(current)}, {int(total)})")
+
+    def _hide_progress(self) -> None:
+        self._evaluate("hideProgress()")
 
     def get_model_status(self) -> dict[str, Any]:
-        """Return detected model names and availability flags."""
         try:
-            status = self._manager.status_dict()
-            return self._ok(**status)
+            return self._ok(**self._manager.status_dict())
         except Exception as exc:
             return self._err(str(exc))
 
     def pick_and_read_file(self) -> dict[str, Any]:
-        """Open file dialog and read PDF/txt contents."""
         if self._window is None:
             return self._err("Window not ready")
 
@@ -73,7 +80,6 @@ class Api:
             return self._err(str(exc))
 
     def detect_language(self, text: str) -> dict[str, Any]:
-        """Detect source language code."""
         try:
             code = detect_language(text or "")
             return self._ok(language=code, display=lang_display_name(code))
@@ -81,29 +87,33 @@ class Api:
             return self._err(str(exc))
 
     def extract_keywords(self, text: str) -> dict[str, Any]:
-        """Run NER with exclusive load."""
         if not (text or "").strip():
             return self._err("本文が空です")
         if self._manager.ner_model() is None:
             return self._err("NER モデルが見つかりません。model/ に GLiNER ONNX を配置してください。")
 
         try:
+            self._show_progress("NER モデルロード中…", 0, 0)
             self._set_status("NER モデルをロード中…")
 
             def _run(engine: Any) -> list[dict[str, Any]]:
-                self._set_status("キーワード抽出中…")
-                return engine.extract(text)
+                def on_progress(current: int, total: int, _detail: str) -> None:
+                    self._show_progress("キーワード抽出中…", current, total)
+                    self._set_status(f"キーワード抽出中… {current}/{total}")
+
+                return engine.extract(text, on_progress=on_progress)
 
             keywords = self._manager.with_ner(_run)
+            self._hide_progress()
             self._set_status(f"抽出完了（{len(keywords)} 件）")
             return self._ok(keywords=keywords)
         except Exception as exc:
             logger.exception("extract_keywords failed")
+            self._hide_progress()
             self._set_status("抽出エラー")
             return self._err(str(exc))
 
     def translate(self, text: str, src: str, tgt: str) -> dict[str, Any]:
-        """Run MT with exclusive load and sentence-level progress."""
         if not (text or "").strip():
             return self._err("本文が空です")
         if self._manager.mt_model() is None:
@@ -114,13 +124,14 @@ class Api:
             if src == "auto":
                 resolved_src = detect_language(text)
 
+            self._show_progress("翻訳モデルロード中…", 0, 0)
             self._set_status("翻訳モデルをロード中…")
             engine = self._manager.load_mt()
 
             def on_progress(current: int, total: int, _piece: str) -> None:
+                self._show_progress("翻訳中…", current, total)
                 self._set_status(f"翻訳中… {current}/{total} 文")
 
-            self._set_status("翻訳中…")
             result = engine.translate(
                 text,
                 resolved_src,
@@ -128,14 +139,12 @@ class Api:
                 on_progress=on_progress,
             )
             self._manager.unload_mt()
+            self._hide_progress()
             self._set_status("翻訳完了")
-            return self._ok(
-                text=result,
-                src=resolved_src,
-                tgt=tgt,
-            )
+            return self._ok(text=result, src=resolved_src, tgt=tgt)
         except Exception as exc:
             logger.exception("translate failed: %s", traceback.format_exc())
             self._manager.unload_mt()
+            self._hide_progress()
             self._set_status("翻訳エラー")
             return self._err(str(exc))

@@ -38,6 +38,34 @@ function status(msg) {
   document.getElementById("statusMsg").textContent = msg;
 }
 
+function showProgress(message, current = 0, total = 0) {
+  const overlay = document.getElementById("progressOverlay");
+  const label = document.getElementById("progressLabel");
+  const bar = document.getElementById("progressBar");
+  const detail = document.getElementById("progressDetail");
+  overlay.style.display = "flex";
+  label.textContent = message || "処理中…";
+  bar.classList.remove("indeterminate");
+  if (total > 0) {
+    const pct = Math.min(100, Math.round((current / total) * 100));
+    bar.style.width = pct + "%";
+    detail.textContent = `${current} / ${total}`;
+  } else {
+    bar.style.width = "35%";
+    bar.classList.add("indeterminate");
+    detail.textContent = "";
+  }
+}
+
+function hideProgress() {
+  const overlay = document.getElementById("progressOverlay");
+  const bar = document.getElementById("progressBar");
+  overlay.style.display = "none";
+  bar.classList.remove("indeterminate");
+  bar.style.width = "0%";
+  document.getElementById("progressDetail").textContent = "";
+}
+
 function updateModelBar() {
   const ner = modelStatus.ner_available
     ? `NER: ${modelStatus.ner_name || "検出"}`
@@ -122,8 +150,10 @@ async function extract() {
     status("本文が空です");
     return;
   }
+  showProgress("キーワード抽出中…", 0, 0);
   status("抽出中…");
   const res = await apiCall("extract_keywords", text);
+  hideProgress();
   if (!res.ok) {
     status(res.error || "抽出失敗");
     return;
@@ -196,8 +226,10 @@ async function translateText() {
   }
   const srcLang = document.getElementById("srcLang").value;
   const tgtLang = document.getElementById("tgtLang").value;
+  showProgress("翻訳中…", 0, 0);
   status("翻訳中…");
   const res = await apiCall("translate", src, srcLang, tgtLang);
+  hideProgress();
   if (!res.ok) {
     status(res.error || "翻訳失敗");
     return;
@@ -221,3 +253,8 @@ window.addEventListener("pywebviewready", initApp);
 if (hasApi()) {
   initApp();
 }
+
+// pywebview bridge から呼ばれる
+window.status = status;
+window.showProgress = showProgress;
+window.hideProgress = hideProgress;

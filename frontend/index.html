@@ -102,6 +102,16 @@
     <span id="statusMsg">準備中…</span>
   </div>
 
+  <div class="progress-overlay" id="progressOverlay" style="display:none" aria-live="polite">
+    <div class="progress-box">
+      <div class="progress-label" id="progressLabel">処理中…</div>
+      <div class="progress-track" id="progressTrack">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <div class="progress-detail" id="progressDetail"></div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

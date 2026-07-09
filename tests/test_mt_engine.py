@@ -1,6 +1,6 @@
 """Tests for MT sentence splitting."""
 
-from backend.mt_engine import split_sentences
+from backend.mt_engine import iter_translation_units, split_paragraphs, split_sentences
 
 
 def test_split_japanese_sentences() -> None:
@@ -9,11 +9,13 @@ def test_split_japanese_sentences() -> None:
     assert len(parts) == 2
 
 
-def test_split_newlines() -> None:
-    text = "Line one\nLine two"
-    parts = split_sentences(text)
+def test_split_paragraphs() -> None:
+    text = "Para one.\n\nPara two."
+    parts = split_paragraphs(text)
     assert len(parts) == 2
 
 
-def test_empty_returns_empty() -> None:
-    assert split_sentences("   ") == []
+def test_iter_translation_units() -> None:
+    text = "A. B.\n\nC."
+    units = iter_translation_units(text)
+    assert len(units) == 3
