@@ -1,8 +1,11 @@
-# CPU-only inference stack (no torch / onnxruntime-gpu)
+# CPU-only inference stack (no onnxruntime-gpu)
 onnxruntime>=1.17.0
 ctranslate2>=4.0.0
 sentencepiece>=0.2.0
 tokenizers>=0.15.0
+transformers>=4.38.0
+gliner>=0.2.5
+huggingface_hub>=0.20.0
 numpy>=1.24.0
 pywebview>=5.0.0
 pypdf>=4.0.0
