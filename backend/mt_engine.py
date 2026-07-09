@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,9 +18,10 @@ NLLB_LANG_CODES: dict[str, str] = {
     "ko": "kor_Hang",
 }
 
-ProgressCallback = Callable[[int, int, str], None]
+# 文ごとに短い休止を入れ UI/WebView の応答性を確保
+YIELD_SECONDS = 0.01
 
-# 1文が長すぎると品質低下するため上限
+ProgressCallback = Callable[[int, int, str], None]
 MAX_SENTENCE_CHARS = 500
 
 
@@ -118,6 +120,8 @@ class MtEngine:
             translated_by_para[para_idx].append(piece)
             if on_progress:
                 on_progress(step, total, piece)
+            if YIELD_SECONDS > 0:
+                time.sleep(YIELD_SECONDS)
 
         paragraphs = [
             "".join(translated_by_para[i]).strip()
@@ -144,7 +148,7 @@ class MtEngine:
         results = self._translator.translate_batch(
             [source_tokens],
             target_prefix=[[tgt_code]],
-            beam_size=2,
+            beam_size=1,
             max_batch_size=1,
             max_decoding_length=512,
         )

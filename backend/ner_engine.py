@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
@@ -27,6 +28,7 @@ LABEL_TO_TYPE = {
 # GLiNER max_len=384 相当。int8 モデルはスコアが低めなので閾値も下げる
 DEFAULT_THRESHOLD = 0.2
 CHUNK_MAX_CHARS = 1200
+CHUNK_YIELD_SECONDS = 0.01
 
 ProgressCallback = Callable[[int, int, str], None]
 
@@ -180,5 +182,7 @@ class NerEngine:
                 etype = LABEL_TO_TYPE.get(label)
                 if term and etype:
                     raw.append({"term": term, "type": etype, "freq": 1})
+            if CHUNK_YIELD_SECONDS > 0 and idx < total:
+                time.sleep(CHUNK_YIELD_SECONDS)
 
         return aggregate_keywords(raw)

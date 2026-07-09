@@ -24,6 +24,10 @@ def main() -> None:
     import webview
 
     from backend.api import Api
+    from backend.runtime_config import apply_cpu_thread_env
+
+    threads = apply_cpu_thread_env()
+    logging.getLogger(__name__).info("CPU inference threads capped at %s", threads)
 
     api = Api()
     window = webview.create_window(

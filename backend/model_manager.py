@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import gc
 import logging
-import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -12,6 +11,7 @@ from typing import Any, Literal
 
 from backend.mt_engine import MtEngine
 from backend.ner_engine import NerEngine
+from backend.runtime_config import cpu_thread_count
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class ModelManager:
 
     def __init__(self, model_dir: Path | None = None, *, cpu_threads: int | None = None) -> None:
         self._model_dir = model_dir or default_model_dir()
-        self._cpu_threads = cpu_threads or max(1, (os.cpu_count() or 2) - 1)
+        self._cpu_threads = cpu_threads if cpu_threads is not None else cpu_thread_count()
         self._detected = scan_models(self._model_dir)
         self._active: ActiveEngine = ActiveEngine.NONE
         self._ner: NerEngine | None = None
