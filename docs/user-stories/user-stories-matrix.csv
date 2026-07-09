@@ -1,0 +1,15 @@
+story_id,epic,feature,route,persona,user_story,precondition,steps,expected_behavior,apis,impl_status,test_method,test_result
+CORE-001,起動,アプリ起動,/,アナリスト,オフライン環境でデスクトップアプリを起動したい,Python 依存がインストール済み,"1. python app.py を実行
+2. WebView が表示される",3ペイン UI が表示されステータスバーにモデル検知結果が出る,get_model_status,implemented,manual,
+SRC-001,本文,テキスト入力,/,アナリスト,本文を貼り付けて文字数と言語を確認したい,アプリ起動済み,1. 本文ペインにテキストを貼り付け,文字数と自動判定言語が更新される,detect_language,implemented,unit,
+SRC-002,本文,ファイル読込,/,アナリスト,PDF/txt を添付して本文に読み込みたい,アプリ起動済み,"1. PDF/テキスト添付をクリック
+2. ファイルを選択",本文ペインに抽出テキストが表示される,"pick_and_read_file,read_text_file",implemented,unit,
+NER-001,キーワード,固有表現抽出,/,アナリスト,人名・国名・地名・組織を抽出したい,NER モデルが model/ に配置済み,"1. 本文を入力
+2. キーワード抽出をクリック",per/country/city/org バッジ付きキーワード一覧が表示される,extract_keywords,implemented,manual,
+NER-002,キーワード,リスト表示・コピー,/,アナリスト,キーワードを改行区切りリストでコピーしたい,抽出結果がある,"1. リスト表示に切替
+2. リストをコピー",キーワード+改行形式がクリップボードに入る,,implemented,manual,
+MT-001,翻訳,多言語翻訳,/,アナリスト,5言語間で本文を翻訳したい,MT モデルが model/ に配置済み,"1. 翻訳元・翻訳後を選択
+2. 翻訳実行",翻訳ペインに訳文が表示され進捗がステータスバーに出る,translate,implemented,manual,
+SYS-001,システム,排他ロード,/,運用者,NER と MT が同時にメモリに載らないことを保証したい,両モデル配置済み,"1. 抽出実行
+2. 翻訳実行",各実行時に片方のモデルのみロードされ完了後解放される,model_manager,implemented,unit,
+SYS-002,システム,モデル未検知,/,運用者,モデル未配置でもクラッシュせず警告したい,model/ が空,1. アプリ起動,該当ボタンが無効化されステータスに未検出と表示,get_model_status,implemented,unit,

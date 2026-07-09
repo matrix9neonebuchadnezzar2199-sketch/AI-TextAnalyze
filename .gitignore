@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+*.spec
+
+# Model weights (external distribution)
+model/**/*.onnx
+model/**/*.bin
+model/**/shared_vocabulary*
+model/**/tokenizer.json
+model/**/gliner_config.json
+model/**/config.json
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+desktop.ini
+
+# Test artifacts
+docs/user-stories/test-results.csv
+docs/user-stories/summary.md

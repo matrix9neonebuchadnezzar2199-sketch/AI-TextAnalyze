@@ -1,0 +1,33 @@
+---
+description: AI-TextAnalyze プロジェクトの絶対制約と設計参照
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# AI-TextAnalyze 開発ルール
+
+正本仕様: [`docs/SPEC.md`](../docs/SPEC.md)
+
+## 絶対制約（MUST）
+- GPU禁止・CPU推論のみ（`onnxruntime-gpu` / `torch` / CUDA 依存禁止）
+- ピークメモリ 2GB 以内
+- 完全オフライン（実行時の外部API・モデル自動DL禁止）
+- モデルは `model/` に配置し起動時自動検知
+- NER と MT は排他ロード必須（同時常駐禁止）
+- 対応言語: ja / en / zh / ru / ko
+
+## 採用モデル（変更禁止）
+- NER: GLiNER multilingual medium ONNX int8（Person / Country / City / Organization）
+- MT: NLLB-200 distilled 600M CTranslate2 int8（CC-BY-NC・非商用）
+
+## 実装方針
+- UI接続: pywebview bridge（`backend/api.py`）
+- 言語判定: langid（オフライン軽量）
+- 例外は握りつぶさず `{ok: false, error: "..."}` 形式でUIへ返す
+- モデル使用後は明示解放 + `gc.collect()`
+
+## 触らない
+- モデル重みの git 同梱
+- HuggingFace 自動ダウンロード
+- 両モデル同時ロード

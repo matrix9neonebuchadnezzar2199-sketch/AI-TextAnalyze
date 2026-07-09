@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI-TextAnalyze</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">TA</div>
+      <div>
+        AI-TextAnalyze
+        <br><small>Multilingual NER &amp; Translation</small>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost" id="btnAttach" onclick="attachFile()">PDF / テキスト添付</button>
+    <button class="btn primary" id="btnExtract" onclick="extract()">キーワード抽出</button>
+    <div class="toggle" id="themeToggle">
+      <button data-t="light" class="active" onclick="setTheme('light')">Light</button>
+      <button data-t="dark" onclick="setTheme('dark')">Dark</button>
+    </div>
+  </div>
+
+  <div class="workspace">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="dot" style="background:#2f6feb"></span> 本文 / Source
+        <span class="count" id="charCount">0 文字</span>
+      </div>
+      <div class="panel-body">
+        <textarea id="source" placeholder="ここにテキストを貼り付け、または「PDF / テキスト添付」から読み込みます…" oninput="onSourceInput()"></textarea>
+      </div>
+      <div class="panel-foot">
+        <button class="btn ghost" onclick="clearAll()">クリア</button>
+        <span class="hint">自動言語判定: <b id="detLang">—</b></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <span class="dot" style="background:#9b59f6"></span> 翻訳 / Translation
+      </div>
+      <div class="trans-controls">
+        <span class="lbl">翻訳元</span>
+        <select id="srcLang">
+          <option value="auto">自動判定</option>
+          <option value="ja">日本語</option>
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+          <option value="ru">Русский</option>
+          <option value="ko">한국어</option>
+        </select>
+        <button class="swap" title="入れ替え" onclick="swapLang()">⇄</button>
+        <span class="lbl">翻訳後</span>
+        <select id="tgtLang">
+          <option value="ja" selected>日本語</option>
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+          <option value="ru">Русский</option>
+          <option value="ko">한국어</option>
+        </select>
+        <button class="btn primary" id="btnTranslate" style="margin-left:auto" onclick="translateText()">翻訳実行</button>
+      </div>
+      <div class="panel-body">
+        <textarea id="target" placeholder="翻訳結果がここに表示されます…" readonly></textarea>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <span class="dot" style="background:#2e8b57"></span> 抽出キーワード
+        <span class="count" id="kwCount">0 件</span>
+      </div>
+      <div class="kw-toolbar">
+        <button class="chip on" data-f="all" onclick="filterKw(this)">すべて</button>
+        <button class="chip" data-f="per" onclick="filterKw(this)">人名</button>
+        <button class="chip" data-f="country" onclick="filterKw(this)">国名</button>
+        <button class="chip" data-f="city" onclick="filterKw(this)">地名</button>
+        <button class="chip" data-f="org" onclick="filterKw(this)">組織</button>
+        <button class="chip" style="margin-left:auto" onclick="toggleRaw()">リスト表示</button>
+      </div>
+      <div class="kw-list" id="kwList">
+        <div class="kw-empty" style="padding:24px 14px;color:var(--text-sub);font-size:12.5px;text-align:center;">
+          「キーワード抽出」を実行すると<br>ここに人名・国名・地名・組織が並びます。
+        </div>
+      </div>
+      <pre class="kw-raw" id="kwRaw"></pre>
+      <div class="panel-foot">
+        <button class="btn ghost" onclick="copyRaw()">リストをコピー</button>
+        <span class="hint" id="kwHint">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span id="modelStatus"><span class="status-dot" id="statusDot"></span>モデル: 検知中…</span>
+    <span class="spacer"></span>
+    <span id="statusMsg">準備中…</span>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
