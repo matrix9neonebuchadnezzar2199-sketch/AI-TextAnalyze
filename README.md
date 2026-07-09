@@ -41,6 +41,7 @@ python app.py
 ```powershell
 python -m pytest
 python scripts/run-user-story-tests.py
+.\scripts\build-portable.ps1
 ```
 
 ## ライセンス注意
