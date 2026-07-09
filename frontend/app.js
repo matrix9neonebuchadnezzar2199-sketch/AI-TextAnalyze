@@ -3,7 +3,14 @@
 let currentFilter = "all";
 let showRaw = false;
 let allKeywords = [];
-let modelStatus = { ner_available: false, mt_available: false };
+let modelStatus = {
+  ner_available: false,
+  mt_available: false,
+  mt_models: [],
+  selected_mt_id: "nllb-600m",
+};
+
+const MT_STORAGE_KEY = "ai-textanalyze-mt-model";
 
 const TYPE_LABELS = {
   per: "人名",
@@ -70,9 +77,10 @@ function updateModelBar() {
   const ner = modelStatus.ner_available
     ? `NER: ${modelStatus.ner_name || "検出"}`
     : "NER: 未検出";
-  const mt = modelStatus.mt_available
-    ? `翻訳: ${modelStatus.mt_name || "検出"}`
-    : "翻訳: 未検出";
+  const mtLabel =
+    (modelStatus.mt_models || []).find((m) => m.id === modelStatus.selected_mt_id)
+      ?.label || modelStatus.mt_name || "未選択";
+  const mt = modelStatus.mt_available ? `翻訳: ${mtLabel}` : `翻訳: ${mtLabel}（未インストール）`;
   document.getElementById("modelStatus").innerHTML =
     `<span class="status-dot${modelStatus.ner_available && modelStatus.mt_available ? "" : " warn"}" id="statusDot"></span>${ner}  ·  ${mt}`;
 
@@ -80,18 +88,79 @@ function updateModelBar() {
   document.getElementById("btnTranslate").disabled = !modelStatus.mt_available;
 }
 
+function populateMtModelSelect() {
+  const sel = document.getElementById("mtModelSelect");
+  if (!sel || !modelStatus.mt_models?.length) return;
+
+  const preferred =
+    localStorage.getItem(MT_STORAGE_KEY) || modelStatus.selected_mt_id || "nllb-600m";
+  sel.innerHTML = modelStatus.mt_models
+    .map((m) => {
+      const suffix = m.available ? "" : "（未インストール）";
+      return `<option value="${m.id}"${m.available ? "" : " disabled"}>${m.label}${suffix}</option>`;
+    })
+    .join("");
+
+  const canUsePreferred = modelStatus.mt_models.some(
+    (m) => m.id === preferred && m.available
+  );
+  const fallback = modelStatus.mt_models.find((m) => m.available)?.id || preferred;
+  sel.value = canUsePreferred ? preferred : fallback;
+}
+
+async function onMtModelChange() {
+  const sel = document.getElementById("mtModelSelect");
+  const modelId = sel.value;
+  const previous = modelStatus.selected_mt_id || "nllb-600m";
+
+  sel.disabled = true;
+  document.getElementById("btnTranslate").disabled = true;
+  showProgress("翻訳モデルロード中…", 0, 0);
+  status("翻訳モデルをロード中…");
+
+  const res = await apiCall("select_mt_model", modelId);
+  hideProgress();
+  sel.disabled = false;
+
+  if (!res.ok) {
+    sel.value = previous;
+    status(res.error || "モデル切替失敗");
+    updateModelBar();
+    return;
+  }
+
+  modelStatus.selected_mt_id = res.selected_mt_id;
+  modelStatus.mt_name = res.mt_name;
+  modelStatus.mt_loaded = true;
+  modelStatus.mt_available = true;
+  localStorage.setItem(MT_STORAGE_KEY, modelId);
+  updateModelBar();
+  status(res.cached ? "翻訳モデル準備完了" : "翻訳モデル起動完了");
+}
+
 async function initApp() {
   const res = await apiCall("get_model_status");
   if (res.ok) {
     modelStatus = res;
+    populateMtModelSelect();
     updateModelBar();
     status("準備完了");
-    // 起動時に翻訳モデルを温存ロード（初回翻訳の10秒待ちを回避）
+
+    const sel = document.getElementById("mtModelSelect");
+    const preferred = sel?.value || modelStatus.selected_mt_id;
+    if (preferred && preferred !== modelStatus.selected_mt_id) {
+      await onMtModelChange();
+      return;
+    }
+
     if (res.mt_available && !res.mt_loaded) {
-      apiCall("warmup_mt").then((warm) => {
+      apiCall("warmup_mt", preferred).then((warm) => {
         if (warm.ok) {
           modelStatus.mt_loaded = true;
+          modelStatus.selected_mt_id = warm.selected_mt_id || preferred;
           status(warm.cached ? "翻訳モデル準備完了" : "翻訳モデル起動完了");
+        } else if (warm.error) {
+          status(warm.error);
         }
       });
     }

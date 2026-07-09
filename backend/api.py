@@ -58,12 +58,22 @@ class Api:
         except Exception as exc:
             return self._err(str(exc))
 
-    def warmup_mt(self) -> dict[str, Any]:
+    def warmup_mt(self, model_id: str | None = None) -> dict[str, Any]:
         """Preload translation model once per session (optional startup)."""
+        if model_id:
+            try:
+                self._manager.set_selected_mt(model_id)
+            except ValueError as exc:
+                return self._err(str(exc))
+
         if self._manager.mt_model() is None:
-            return self._err("翻訳モデルが見つかりません")
-        if self._manager.mt_is_loaded():
-            return self._ok(warmed=True, cached=True)
+            spec_id = self._manager.selected_mt_id
+            return self._err(
+                "翻訳モデルが見つかりません。"
+                f" python scripts/download-models.py --mt {spec_id}"
+            )
+        if self._manager.mt_matches_selection():
+            return self._ok(warmed=True, cached=True, selected_mt_id=self._manager.selected_mt_id)
 
         try:
             self._show_progress("翻訳モデル起動中…", 0, 0)
@@ -71,9 +81,52 @@ class Api:
             self._manager.load_mt()
             self._hide_progress()
             self._set_status("翻訳モデル準備完了")
-            return self._ok(warmed=True, cached=False)
+            meta = self._manager.mt_model()
+            return self._ok(
+                warmed=True,
+                cached=False,
+                selected_mt_id=self._manager.selected_mt_id,
+                mt_name=meta.name if meta else None,
+            )
         except Exception as exc:
             logger.exception("warmup_mt failed")
+            self._hide_progress()
+            return self._err(str(exc))
+
+    def select_mt_model(self, model_id: str) -> dict[str, Any]:
+        """Switch MT variant and load it (shows progress overlay from JS)."""
+        try:
+            self._manager.set_selected_mt(model_id)
+        except ValueError as exc:
+            return self._err(str(exc))
+
+        meta = self._manager.mt_model()
+        if meta is None:
+            from backend.mt_catalog import get_mt_spec
+
+            spec = get_mt_spec(model_id)
+            return self._err(
+                f"{spec.label} が model/{spec.folder}/ にありません。"
+                f" python scripts/download-models.py --mt {model_id} で取得してください。"
+            )
+
+        if self._manager.mt_matches_selection():
+            return self._ok(
+                selected_mt_id=model_id,
+                mt_name=meta.name,
+                cached=True,
+            )
+
+        try:
+            self._show_progress("翻訳モデルロード中…", 0, 0)
+            self._set_status("翻訳モデルをロード中…")
+            self._manager.load_mt()
+            self._hide_progress()
+            self._set_status("翻訳モデル準備完了")
+            return self._ok(selected_mt_id=model_id, mt_name=meta.name, cached=False)
+        except Exception as exc:
+            logger.exception("select_mt_model failed")
+            self._manager.unload_mt()
             self._hide_progress()
             return self._err(str(exc))
 

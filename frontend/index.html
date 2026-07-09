@@ -17,6 +17,13 @@
       </div>
     </div>
     <div class="spacer"></div>
+    <label class="mt-model-picker">
+      <span class="lbl">翻訳モデル</span>
+      <select id="mtModelSelect" onchange="onMtModelChange()" aria-label="翻訳モデル選択">
+        <option value="nllb-600m">NLLB 600M</option>
+        <option value="nllb-1.3b">NLLB 1.3B</option>
+      </select>
+    </label>
     <button class="btn ghost" id="btnAttach" onclick="attachFile()">PDF / テキスト添付</button>
     <button class="btn primary" id="btnExtract" onclick="extract()">キーワード抽出</button>
     <div class="toggle" id="themeToggle">

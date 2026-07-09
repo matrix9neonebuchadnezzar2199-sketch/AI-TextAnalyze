@@ -82,3 +82,27 @@ def test_status_dict_no_models(tmp_path: Path) -> None:
     status = mgr.status_dict()
     assert status["ner_available"] is False
     assert status["mt_available"] is False
+    assert len(status["mt_models"]) == 2
+    assert status["selected_mt_id"] == "nllb-600m"
+
+
+def test_mt_model_selection(tmp_path: Path) -> None:
+    mt600 = tmp_path / "mt-nllb-600m-ct2-int8"
+    mt600.mkdir()
+    (mt600 / "model.bin").write_bytes(b"x")
+    (mt600 / "config.json").write_text("{}", encoding="utf-8")
+    (mt600 / "shared_vocabulary.txt").write_text("v", encoding="utf-8")
+
+    mt13 = tmp_path / "mt-nllb-1.3b-ct2-int8"
+    mt13.mkdir()
+    (mt13 / "model.bin").write_bytes(b"x")
+    (mt13 / "config.json").write_text("{}", encoding="utf-8")
+    (mt13 / "shared_vocabulary.txt").write_text("v", encoding="utf-8")
+
+    mgr = ModelManager(tmp_path)
+    assert mgr.mt_model() is not None
+    assert mgr.mt_model().name == "mt-nllb-600m-ct2-int8"
+
+    mgr.set_selected_mt("nllb-1.3b")
+    assert mgr.selected_mt_id == "nllb-1.3b"
+    assert mgr.mt_model().name == "mt-nllb-1.3b-ct2-int8"

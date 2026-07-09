@@ -9,6 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
+from backend.mt_catalog import DEFAULT_MT_MODEL_ID, MT_CATALOG, get_mt_spec
 from backend.mt_engine import MtEngine
 from backend.ner_engine import NerEngine
 from backend.runtime_config import cpu_thread_count
@@ -91,6 +92,33 @@ class ModelManager:
         self._active: ActiveEngine = ActiveEngine.NONE
         self._ner: NerEngine | None = None
         self._mt: MtEngine | None = None
+        self._selected_mt_id = DEFAULT_MT_MODEL_ID
+        self._loaded_mt_id: str | None = None
+
+    @property
+    def selected_mt_id(self) -> str:
+        return self._selected_mt_id
+
+    def mt_catalog_status(self) -> list[dict[str, Any]]:
+        """Catalog entries with on-disk availability."""
+        detected_names = {m.name for m in self._detected if m.kind == "mt"}
+        return [
+            {
+                "id": spec.id,
+                "label": spec.label,
+                "folder": spec.folder,
+                "available": spec.folder in detected_names,
+            }
+            for spec in MT_CATALOG
+        ]
+
+    def set_selected_mt(self, model_id: str) -> None:
+        """Select MT variant; unload current MT if selection changes."""
+        get_mt_spec(model_id)
+        if model_id == self._selected_mt_id:
+            return
+        self.unload_mt()
+        self._selected_mt_id = model_id
 
     @property
     def detected(self) -> list[DetectedModel]:
@@ -100,6 +128,13 @@ class ModelManager:
         return next((m for m in self._detected if m.kind == "ner"), None)
 
     def mt_model(self) -> DetectedModel | None:
+        spec = get_mt_spec(self._selected_mt_id)
+        selected = next(
+            (m for m in self._detected if m.kind == "mt" and m.name == spec.folder),
+            None,
+        )
+        if selected is not None:
+            return selected
         return next((m for m in self._detected if m.kind == "mt"), None)
 
     @property
@@ -115,6 +150,8 @@ class ModelManager:
             "ner_available": ner is not None,
             "mt_name": mt.name if mt else None,
             "mt_available": mt is not None,
+            "mt_models": self.mt_catalog_status(),
+            "selected_mt_id": self._selected_mt_id,
             "active_engine": self._active.value,
         }
 
@@ -138,9 +175,14 @@ class ModelManager:
         if self._mt is not None:
             self._mt.close()
             self._mt = None
+        self._loaded_mt_id = None
         if self._active == ActiveEngine.MT:
             self._active = ActiveEngine.NONE
         gc.collect()
+
+    def mt_matches_selection(self) -> bool:
+        """True when loaded MT matches the currently selected catalog id."""
+        return self._mt is not None and self._loaded_mt_id == self._selected_mt_id
 
     def unload_all(self) -> None:
         """Release any loaded engine."""
@@ -174,8 +216,11 @@ class ModelManager:
         self._active = ActiveEngine.NER
         return self._ner
 
-    def load_mt(self) -> MtEngine:
+    def load_mt(self, model_id: str | None = None) -> MtEngine:
         """Load MT exclusively (unloads NER first).
+
+        Args:
+            model_id: Optional catalog id to select before loading.
 
         Returns:
             Loaded MtEngine instance.
@@ -183,20 +228,26 @@ class ModelManager:
         Raises:
             FileNotFoundError: No MT model detected.
         """
+        if model_id is not None:
+            self.set_selected_mt(model_id)
+
         self.unload_ner()
-        if self._mt is not None:
+        if self._mt is not None and self.mt_matches_selection():
             self._active = ActiveEngine.MT
             return self._mt
 
         meta = self.mt_model()
         if meta is None:
+            spec = get_mt_spec(self._selected_mt_id)
             raise FileNotFoundError(
-                f"MT model not found under {self._model_dir}. "
-                "Place CTranslate2 NLLB files in model/."
+                f"MT model '{spec.label}' not found under {self._model_dir / spec.folder}. "
+                f"Run: python scripts/download-models.py --mt {spec.id}"
             )
 
+        self.unload_mt()
         logger.info("Loading MT model: %s", meta.name)
         self._mt = MtEngine(meta.path, intra_threads=self._cpu_threads)
+        self._loaded_mt_id = self._selected_mt_id
         self._active = ActiveEngine.MT
         return self._mt
 
