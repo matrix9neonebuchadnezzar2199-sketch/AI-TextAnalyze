@@ -20,7 +20,7 @@ NLLB_LANG_CODES: dict[str, str] = {
 ProgressCallback = Callable[[int, int, str], None]
 
 # CT2 はバッチ推論の方が逐次より大幅に速い
-TRANSLATE_BATCH_SIZE = 8
+TRANSLATE_BATCH_SIZE = 16
 MAX_SENTENCE_CHARS = 500
 
 
