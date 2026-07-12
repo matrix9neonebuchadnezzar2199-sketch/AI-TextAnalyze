@@ -28,3 +28,11 @@ desktop.ini
 # Test artifacts
 docs/user-stories/test-results.csv
 docs/user-stories/summary.md
+
+# Local fixtures / large binaries
+honnyakutesuto/*.pdf
+honnyakutesuto/_results/
+*.jpg
+*.jpeg
+*.png
+!frontend/**/*.png

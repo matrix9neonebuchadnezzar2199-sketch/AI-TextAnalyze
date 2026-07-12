@@ -30,7 +30,10 @@ MAX_SENTENCE_CHARS = 500
 # 段落丸ごと翻訳は長文で出力が途中打ち切りになるため、常に文単位を優先
 MAX_WHOLE_PARAGRAPH_CHARS = 0
 
-_URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
+_URL_RE = re.compile(
+    r"https?://[^\s\]\)<>]+|(?:www\d*\.)[^\s\]\)<>]+",
+    re.IGNORECASE,
+)
 _ORPHAN_MARKER_RE = re.compile(r"^\(\d+\)$")
 _TOEFL_MARKER_RE = re.compile(r"^\[\s*\]$|^\[X\]$", re.IGNORECASE)
 _TOEFL_PARA_ONLY_RE = re.compile(r"^\(\d{1,2}\)$")
@@ -44,25 +47,99 @@ _ENTITY_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _LITERAL_SPLIT_RE = re.compile(
-    r"(https?://[^\s\]\)<>]+|www\.[^\s\]\)<>]+|\[\s*\]|\[X\]|\[END\]|-{5,}|"
+    r"(https?://[^\s\]\)<>]+|(?:www\d*\.)[^\s\]\)<>]+|\[\s*\]|\[X\]|\[END\]|-{5,}|"
+    r"\b\d{1,2}/\d{1,2}\b|"
     r"10\s+U\.S\.C\.\s*§\s*[^,\n;]+|Public Law \d+-\d+|"
     r"(?:Sections?\s+)?1260H(?:\([^)]*\))+)",
     re.IGNORECASE,
 )
 _COUAGR_RE = re.compile(r"\b[Cc]ougars?\b")
+_PUMA_RE = re.compile(r"\b[Pp]umas?\b")
 _MOOSE_RE = re.compile(r"\bmoose\b", re.IGNORECASE)
+_HANGUL_SPACED_RE = re.compile(r"(?:[\uac00-\ud7a3] ){3,}[\uac00-\ud7a3]")
+_CJK_SPACED_RE = re.compile(r"(?:[\u4e00-\u9fff] ){3,}[\u4e00-\u9fff]")
+_REPEATED_PHRASE_RE = re.compile(r"(.{4,}?)(?:\s*\1){2,}")
+
+
+def _looks_like_url_continuation(prev: str, nxt: str) -> bool:
+    """True when a newline is likely inside a URL/path rather than prose."""
+    window = f"{prev[-48:]}{nxt[:48]}"
+    if re.search(r"https?://|www\d*\.", window, re.IGNORECASE):
+        return True
+    if "/" in prev[-40:] and re.match(r"[a-zA-Z0-9._/?=&%#:@-]", nxt or ""):
+        return True
+    return False
 
 
 def collapse_soft_linebreaks(text: str) -> str:
-    """Join PDF line-wraps inside URLs, paths, and hyphenated words."""
+    """Join PDF line-wraps: URLs without space, Latin prose with space."""
     normalized = text.replace("\r\n", "\n")
-    normalized = re.sub(
-        r"(?<=[a-zA-Z0-9_./?=&%#:@-])\n(?=[a-zA-Z0-9_./?=&%#:@-])",
-        "",
-        normalized,
-    )
-    normalized = re.sub(r"(\w)-\n(\w)", r"\1\2", normalized)
-    return normalized
+    lines = normalized.split("\n")
+    if len(lines) <= 1:
+        return normalized
+
+    out: list[str] = []
+    buf = lines[0]
+    for line in lines[1:]:
+        if not line:
+            out.append(buf)
+            buf = ""
+            continue
+        if not buf:
+            buf = line
+            continue
+        if _looks_like_url_continuation(buf, line):
+            buf = f"{buf}{line}"
+        elif buf.endswith("-") and re.match(r"[A-Za-z]", line):
+            buf = f"{buf[:-1]}{line}"
+        elif (
+            not re.search(r"[.!?。．！？:]$", buf.rstrip())
+            and re.search(r"[A-Za-z0-9)\]\"']$", buf.rstrip())
+            and re.match(r"[A-Za-z(\"']", line)
+        ):
+            # PDF 折り返し（文末記号なし）のみスペース結合
+            buf = f"{buf} {line}"
+        elif re.search(r"[\u0400-\u04FF\u4e00-\u9fff\uac00-\ud7a3]$", buf) and re.match(
+            r"[\u0400-\u04FF\u4e00-\u9fff\uac00-\ud7a3]", line
+        ):
+            buf = f"{buf}{line}"
+        else:
+            out.append(buf)
+            buf = line
+    if buf != "" or (lines and lines[-1] == ""):
+        out.append(buf)
+    return "\n".join(out)
+
+
+def collapse_pdf_spacing(text: str) -> str:
+    """Collapse PDF char-spaced CJK/Hangul runs and squeeze excess blanks."""
+    text = collapse_soft_linebreaks(text)
+    # 「일 본 의 포 용」のような1文字トークン連続のみ潰す（語間空白は残す）
+    text = _HANGUL_SPACED_RE.sub(lambda m: m.group(0).replace(" ", ""), text)
+    text = _CJK_SPACED_RE.sub(lambda m: m.group(0).replace(" ", ""), text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    return text
+
+
+def suppress_repeated_phrases(text: str) -> str:
+    """Truncate pathological MT loops like 'A A A A' or long phrase repeats."""
+    if not text:
+        return text
+    cleaned = text
+    for _ in range(5):
+        nxt = _REPEATED_PHRASE_RE.sub(r"\1", cleaned)
+        if nxt == cleaned:
+            break
+        cleaned = nxt
+    # token-level runaway: same short token 4+ times
+    cleaned = re.sub(r"(\S+)(?:\s+\1){3,}", r"\1", cleaned)
+    return cleaned
+
+
+def clamp_decoding_length(source_chars: int) -> int:
+    """Bound CT2 output length to reduce loop room on short units."""
+    return max(96, min(768, source_chars * 2 + 64))
 
 
 def is_regulatory_list_text(text: str) -> bool:
@@ -154,36 +231,37 @@ def join_literal_segments(segments: list[tuple[bool, str]]) -> str:
 
 def normalize_source_for_mt(text: str, src: str, tgt: str) -> str:
     """Apply lightweight source fixes for known NLLB failure modes."""
+    text = collapse_pdf_spacing(text)
     if tgt != "ja":
         return text
-    if src not in ("en", "auto"):
-        return text
 
-    def _cougar_repl(match: re.Match[str]) -> str:
-        word = match.group(0)
-        plural = word.lower().endswith("s")
-        if word[0].isupper():
-            return "Mountain lions" if plural else "Mountain lion"
-        return "mountain lions" if plural else "mountain lion"
+    # EN→JA 固有の誤訳回避
+    if src in ("en", "auto"):
 
-    text = _COUAGR_RE.sub(_cougar_repl, text)
-    text = _MOOSE_RE.sub("North American moose", text)
-    if is_regulatory_list_text(text):
-        return text
-    text = format_toefl_paragraph_markers(text)
-    # TOEFL 問題文の "paragraph N" は「第N項」に寄せる（"図書" 誤訳回避）
-    text = re.sub(r"\bparagraph\s+(\d{1,2})\b", r"item \1", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bin\s+paragraph\s+(\d{1,2})\b", r"in item \1", text, flags=re.IGNORECASE)
-    # "1. Why..." → "Question 1: Why..."（"1 図書" 誤訳回避）
-    text = re.sub(r"(?m)^(\d{1,2})\.\s+", r"Question \1: ", text)
-    text = re.sub(r"\bThe word\b", "The term", text)
-    text = re.sub(r"\bThe phrase\b", "The expression", text)
+        def _cougar_repl(match: re.Match[str]) -> str:
+            word = match.group(0)
+            plural = word.lower().endswith("s")
+            if word[0].isupper():
+                return "Mountain lions" if plural else "Mountain lion"
+            return "mountain lions" if plural else "mountain lion"
+
+        text = _COUAGR_RE.sub(_cougar_repl, text)
+        text = _PUMA_RE.sub(_cougar_repl, text)
+        text = _MOOSE_RE.sub("North American moose", text)
+        if is_regulatory_list_text(text):
+            return text
+        text = format_toefl_paragraph_markers(text)
+        text = re.sub(r"\bparagraph\s+(\d{1,2})\b", r"item \1", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bin\s+paragraph\s+(\d{1,2})\b", r"in item \1", text, flags=re.IGNORECASE)
+        text = re.sub(r"(?m)^(\d{1,2})\.\s+", r"Question \1: ", text)
+        text = re.sub(r"\bThe word\b", "The term", text)
+        text = re.sub(r"\bThe phrase\b", "The expression", text)
     return text
 
 
 def split_literal_segments(text: str) -> list[tuple[bool, str]]:
     """Split text into literal (URL/TOEFL marker) and translatable segments."""
-    text = collapse_soft_linebreaks(text)
+    text = collapse_pdf_spacing(text)
     segments: list[tuple[bool, str]] = []
     pos = 0
     for match in _LITERAL_SPLIT_RE.finditer(text):
@@ -311,6 +389,8 @@ def is_pass_through_unit(unit: str) -> bool:
     if stripped.lower() == "[end]":
         return True
     if re.fullmatch(r"-{5,}", stripped):
+        return True
+    if re.fullmatch(r"\d{1,2}/\d{1,2}", stripped):
         return True
     if is_entity_name_line(stripped):
         return True
@@ -514,16 +594,20 @@ class MtEngine:
             for sentence in sentences
         ]
         prefixes = [[tgt_code]] * len(sources)
+        # 短い文は出力長を抑え、反復 n-gram を禁止してループを防ぐ
+        max_len = max(clamp_decoding_length(len(s)) for s in sentences)
         results = self._translator.translate_batch(
             sources,
             target_prefix=prefixes,
             beam_size=2,
             max_batch_size=max(TRANSLATE_BATCH_SIZE, len(sources)),
-            max_decoding_length=2048,
+            max_decoding_length=max_len,
+            repetition_penalty=1.2,
+            no_repeat_ngram_size=3,
         )
 
         decoded: list[str] = []
-        for result in results:
+        for sentence, result in zip(sentences, results):
             if not result.hypotheses:
                 decoded.append("")
                 continue
@@ -534,7 +618,21 @@ class MtEngine:
                 tokenizer.convert_tokens_to_ids(tokens),
                 skip_special_tokens=True,
             ).strip()
-            if tgt_code == "jpn_Jpan" and text and text[-1] not in "。．！？":
+            text = suppress_repeated_phrases(text)
+            # NLLB が稀に出す無意味な「ほら」を除去
+            text = re.sub(r"(?:^|[。．\s])ほら(?:[。．\s]|$)", " ", text).strip()
+            text = re.sub(r"\s{2,}", " ", text)
+            # ほぼ英語のまま残った出力には日本語句点を付けない
+            latin_ratio = (
+                sum(1 for ch in text if ("A" <= ch <= "Z") or ("a" <= ch <= "z"))
+                / max(len(text), 1)
+            )
+            if (
+                tgt_code == "jpn_Jpan"
+                and text
+                and latin_ratio < 0.45
+                and text[-1] not in "。．！？!?」』）)]"
+            ):
                 text += "。"
             decoded.append(text)
         return decoded

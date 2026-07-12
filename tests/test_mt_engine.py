@@ -50,6 +50,11 @@ def test_collapse_soft_linebreaks_joins_wrapped_url() -> None:
     assert collapse_soft_linebreaks(text) == "http://example.com/animals/mountain-lion/page"
 
 
+def test_collapse_soft_linebreaks_keeps_word_space() -> None:
+    text = "Eventually, cougar\npopulations recovered to a level"
+    assert "cougar populations" in collapse_soft_linebreaks(text)
+
+
 def test_join_literal_segments_inserts_newlines() -> None:
     segments = [
         (False, "段落末です。"),
@@ -58,6 +63,32 @@ def test_join_literal_segments_inserts_newlines() -> None:
     ]
     joined = join_literal_segments(segments)
     assert "。\n[]\n\n(5)" in joined
+
+
+def test_collapse_pdf_spacing_hangul() -> None:
+    from backend.mt_engine import collapse_pdf_spacing
+
+    char_spaced = "일 본 의 포 용 적 인"
+    assert collapse_pdf_spacing(char_spaced) == "일본의포용적인"
+    word_spaced = "일본의  포용적인  e 스포츠"
+    out = collapse_pdf_spacing(word_spaced)
+    assert "일본의 포용적인" in out
+    assert "  " not in out
+
+
+def test_suppress_repeated_phrases() -> None:
+    from backend.mt_engine import suppress_repeated_phrases
+
+    looped = "競争相手と競争できる " * 8
+    out = suppress_repeated_phrases(looped)
+    assert out.count("競争相手と競争できる") <= 2
+
+
+def test_www3_url_is_literal() -> None:
+    text = "See www3.nhk.or.jp/nhkworld/ko/news/backstories/4535 for details."
+    segments = split_literal_segments(text)
+    literals = [seg for is_lit, seg in segments if is_lit]
+    assert literals == ["www3.nhk.or.jp/nhkworld/ko/news/backstories/4535"]
 
 
 def test_split_literal_segments() -> None:

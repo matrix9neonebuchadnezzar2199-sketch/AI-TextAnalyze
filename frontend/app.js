@@ -11,6 +11,8 @@ let modelStatus = {
 };
 
 const MT_STORAGE_KEY = "ai-textanalyze-mt-model";
+const THEME_STORAGE_KEY = "ai-textanalyze-theme";
+const SOURCE_SIDEBAR_KEY = "ai-textanalyze-source-collapsed";
 
 const TYPE_LABELS = {
   per: "人名",
@@ -35,10 +37,31 @@ async function apiCall(method, ...args) {
 }
 
 function setTheme(t) {
-  document.documentElement.setAttribute("data-theme", t);
+  const theme = t === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", theme);
   document.querySelectorAll("#themeToggle button").forEach((b) => {
-    b.classList.toggle("active", b.dataset.t === t);
+    b.classList.toggle("active", b.dataset.t === theme);
   });
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+}
+
+function applySourceCollapsed(collapsed) {
+  const workspace = document.getElementById("workspace");
+  const btn = document.getElementById("btnToggleSource");
+  if (!workspace) return;
+  workspace.classList.toggle("source-collapsed", collapsed);
+  if (btn) {
+    btn.title = collapsed ? "本文を展開" : "本文を折りたたむ";
+    btn.setAttribute("aria-label", collapsed ? "本文サイドバーを展開" : "本文サイドバーを折りたたむ");
+    btn.textContent = collapsed ? "▶" : "◀";
+  }
+  localStorage.setItem(SOURCE_SIDEBAR_KEY, collapsed ? "1" : "0");
+}
+
+function toggleSourceSidebar() {
+  const workspace = document.getElementById("workspace");
+  if (!workspace) return;
+  applySourceCollapsed(!workspace.classList.contains("source-collapsed"));
 }
 
 function status(msg) {
@@ -138,7 +161,14 @@ async function onMtModelChange() {
   status(res.cached ? "翻訳モデル準備完了" : "翻訳モデル起動完了");
 }
 
+function initUiPrefs() {
+  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  setTheme(savedTheme === "light" ? "light" : "dark");
+  applySourceCollapsed(localStorage.getItem(SOURCE_SIDEBAR_KEY) === "1");
+}
+
 async function initApp() {
+  initUiPrefs();
   const res = await apiCall("get_model_status");
   if (res.ok) {
     modelStatus = res;
@@ -172,6 +202,8 @@ async function initApp() {
 function updateCount() {
   const n = document.getElementById("source").value.length;
   document.getElementById("charCount").textContent = n.toLocaleString() + " 文字";
+  const rail = document.getElementById("charCountRail");
+  if (rail) rail.textContent = n.toLocaleString();
 }
 
 async function onSourceInput() {
@@ -327,6 +359,7 @@ function swapLang() {
   status("言語を入れ替えました");
 }
 
+initUiPrefs();
 window.addEventListener("pywebviewready", initApp);
 if (hasApi()) {
   initApp();

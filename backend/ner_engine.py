@@ -12,12 +12,33 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 ENTITY_LABELS = ["Person", "Country", "City", "Organization"]
+# CJK 文書向けの補助ラベル（GLiNER が英語ラベルだけだと取りこぼしやすい）
+ENTITY_LABELS_CJK = [
+    "Person",
+    "人名",
+    "Country",
+    "国家",
+    "国家/地区",
+    "City",
+    "城市",
+    "地名",
+    "Organization",
+    "组织",
+    "机构",
+]
 
 LABEL_TO_TYPE = {
     "Person": "per",
+    "人名": "per",
     "Country": "country",
+    "国家": "country",
+    "国家/地区": "country",
     "City": "city",
+    "城市": "city",
+    "地名": "city",
     "Organization": "org",
+    "组织": "org",
+    "机构": "org",
     "person": "per",
     "country": "country",
     "city": "city",
@@ -163,7 +184,16 @@ class NerEngine:
         if self._model is None:
             raise RuntimeError("NER engine is not loaded")
 
-        chunks = chunk_text(text)
+        # PDF 由来の CJK/ハングル空白を潰してから NER（エンティティ切断を防ぐ）
+        from backend.mt_engine import collapse_pdf_spacing
+
+        chunks = chunk_text(collapse_pdf_spacing(text))
+        # CJK は int8 スコアが低めになりやすい
+        has_cjk = bool(
+            re.search(r"[\u4e00-\u9fff\uac00-\ud7a3]", text)
+        )
+        labels = ENTITY_LABELS_CJK if has_cjk else ENTITY_LABELS
+        threshold = min(self._threshold, 0.12) if has_cjk else self._threshold
         total = len(chunks)
         raw: list[dict[str, Any]] = []
 
@@ -172,8 +202,8 @@ class NerEngine:
                 on_progress(idx, total, f"チャンク {idx}/{total}")
             predictions = self._model.predict_entities(
                 chunk,
-                ENTITY_LABELS,
-                threshold=self._threshold,
+                labels,
+                threshold=threshold,
                 flat_ner=True,
             )
             for pred in predictions:
