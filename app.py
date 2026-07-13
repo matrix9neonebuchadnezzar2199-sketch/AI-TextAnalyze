@@ -11,7 +11,14 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
+def _frontend_dir() -> Path:
+    """開発時はリポジトリの frontend/、PyInstaller 凍結時は _MEIPASS 配下。"""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS")) / "frontend"
+    return Path(__file__).resolve().parent / "frontend"
+
+
+FRONTEND_DIR = _frontend_dir()
 INDEX_HTML = FRONTEND_DIR / "index.html"
 
 

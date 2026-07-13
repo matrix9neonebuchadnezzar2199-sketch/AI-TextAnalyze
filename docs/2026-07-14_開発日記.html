@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>2026-07-14 開発日記 - AI-TextAnalyze</title>
+<style>
+:root {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --heading: #cbd5e1;
+  --accent: #a78bfa;
+  --accent-deep: #7c3aed;
+  --border: #334155;
+  --code-bg: #0b1220;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --err: #f87171;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body.diary {
+  margin: 0 auto;
+  padding: 40px 20px 80px;
+  max-width: 960px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+}
+body.diary > header {
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+body.diary > header h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  color: var(--accent);
+  font-weight: 600;
+}
+body.diary > header .subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.diary-toc {
+  margin-bottom: 28px;
+  padding: 16px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.diary-toc h2 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--heading);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.diary-toc table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.diary-toc th {
+  text-align: left;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.diary-toc td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.diary-toc tr:last-child td { border-bottom: none; }
+.diary-toc td:first-child {
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.entry {
+  margin: 22px 0;
+  padding: 20px 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.entry h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.entry .meta {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.entry h3 {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  color: var(--heading);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.entry h3:first-of-type { margin-top: 0; }
+.entry p { margin: 8px 0; }
+.entry ul { margin: 8px 0; padding-left: 22px; }
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-weight: 500;
+}
+.tag-scope { border-color: var(--accent); color: var(--accent); }
+.tag-ok { border-color: var(--ok); color: var(--ok); }
+.tag-type { border-color: var(--muted); color: var(--muted); }
+code {
+  background: var(--code-bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+}
+.changes { list-style: none; padding-left: 0; }
+.changes li {
+  padding: 3px 0;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+}
+.changes .op { display: inline-block; width: 24px; text-align: center; font-weight: 600; }
+.op-mod { color: var(--warn); }
+.op-add { color: var(--ok); }
+footer {
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+</style>
+</head>
+<body class="diary">
+<header>
+  <h1>2026-07-14 開発日記</h1>
+  <p class="subtitle">AI-TextAnalyze — 配布ビルド整備 + UI/UX 全面改修</p>
+</header>
+
+<section class="diary-toc">
+  <h2>目次</h2>
+  <table>
+    <thead>
+      <tr><th>時刻</th><th>概要</th><th>ステータス</th><th>詳細</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>08:08</td>
+        <td>PyInstaller portable ビルド</td>
+        <td><span class="tag tag-ok">ok</span></td>
+        <td><a href="#e0808">#e0808</a></td>
+      </tr>
+      <tr>
+        <td>08:52</td>
+        <td>UI/UX 改修（レイアウト・進捗・ハイライト）</td>
+        <td><span class="tag tag-ok">ok</span></td>
+        <td><a href="#e0852">#e0852</a></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<article class="entry" id="e0808">
+  <h2>08:08 — PyInstaller portable 配布ビルド</h2>
+  <div class="meta">
+    <span class="tag tag-type">dev</span>
+    <span class="tag tag-scope">release</span>
+    <span class="tag tag-ok">status: ok</span>
+  </div>
+
+  <h3>概要</h3>
+  <p><code>scripts/build-portable.ps1</code> で PyInstaller 配布物を生成。当初 <code>model/</code> 未同梱だったため、凍結時のパス解決を修正し、ビルド後に <code>model/</code> を exe 横へ robocopy するよう拡張。</p>
+
+  <h3>変更ファイル</h3>
+  <ul class="changes">
+    <li><span class="op op-mod">M</span> <code>backend/model_manager.py</code> — 凍結時は exe ディレクトリの <code>model/</code></li>
+    <li><span class="op op-mod">M</span> <code>app.py</code> — frontend を <code>_MEIPASS</code> から参照</li>
+    <li><span class="op op-mod">M</span> <code>scripts/build-portable.ps1</code> — ビルド後 model コピー、失敗検知</li>
+  </ul>
+
+  <h3>設計判断</h3>
+  <ul>
+    <li>配布単位は <code>dist/AI-TextAnalyze/</code> フォルダ（exe + <code>_internal/</code> + <code>model/</code>）。ZIP は不要。</li>
+    <li>モデルは git 管理外（<code>.gitignore</code>）。配布時はローカル <code>model/</code> をコピー。</li>
+  </ul>
+
+  <h3>検証</h3>
+  <ul>
+    <li>build-portable.ps1 exit 0</li>
+    <li>frozen パスで <code>scan_models</code> が NER/MT を検出</li>
+  </ul>
+</article>
+
+<article class="entry" id="e0852">
+  <h2>08:52 — UI/UX 全面改修</h2>
+  <div class="meta">
+    <span class="tag tag-type">dev</span>
+    <span class="tag tag-scope">frontend, backend</span>
+    <span class="tag tag-ok">status: ok</span>
+  </div>
+
+  <h3>概要</h3>
+  <p>操作導線の再配置、本文/翻訳スプリッタ、進捗バーの単調増加、本文+翻訳 NER マージ、キーワード複数選択の黄マーカ、翻訳文単位クリック連動ハイライトを実装。</p>
+
+  <h3>UI 配置</h3>
+  <ul>
+    <li>「PDF/テキスト添付」→ 本文フッタのクリア左</li>
+    <li>翻訳ヘッダ: タイトル → MT 選択 → 翻訳元 ⇄ 翻訳後 → 翻訳実行</li>
+    <li>「キーワード抽出」→ 抽出キーワード見出し右</li>
+    <li>本文と翻訳の間にドラッグ可能スプリッタ（幅は localStorage 保存）</li>
+  </ul>
+
+  <h3>変更ファイル</h3>
+  <ul class="changes">
+    <li><span class="op op-mod">M</span> <code>frontend/index.html</code>, <code>style.css</code>, <code>app.js</code></li>
+    <li><span class="op op-mod">M</span> <code>backend/mt_engine.py</code> — <code>TranslateResult</code> + グローバル進捗</li>
+    <li><span class="op op-mod">M</span> <code>backend/api.py</code>, <code>ner_engine.py</code></li>
+    <li><span class="op op-mod">M</span> <code>tests/test_mt_engine.py</code>, <code>test_api.py</code></li>
+    <li><span class="op op-mod">M</span> <code>scripts/user_story_catalog.py</code> — UI-001〜004 追加</li>
+    <li><span class="op op-mod">M</span> <code>docs/user-stories/user-stories-matrix.csv</code></li>
+  </ul>
+
+  <h3>設計判断</h3>
+  <ul>
+    <li>キーワードマージは casefold + 種別のみ（「アメリカ」と「U.S.」は別エントリ）</li>
+    <li>翻訳 API は <code>units[]</code>（文単位 src/tgt）を返し UI で連動ハイライト</li>
+    <li>進捗は literal セグメント横断の global total で 0→100% 単調増加</li>
+    <li>本文は contenteditable、翻訳は <code>.mt-unit</code> ブロック描画</li>
+  </ul>
+
+  <h3>検証</h3>
+  <ul>
+    <li><code>pytest -k "not integration"</code> — 47 passed</li>
+    <li><code>scripts/run-user-story-tests.py</code> — fail=0</li>
+  </ul>
+
+  <h3>残課題</h3>
+  <ul>
+    <li>pywebview 実機でハイライト・スプリッタ操作確認</li>
+    <li>portable 再ビルド（frontend 同梱）</li>
+  </ul>
+</article>
+
+<footer>
+  AI-TextAnalyze / 2026-07-14 — 単一 HTML（外部依存なし）
+</footer>
+</body>
+</html>

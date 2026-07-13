@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TranslateResult:
+    """Aligned translation output for UI highlighting."""
+
+    text: str
+    units: list[dict[str, Any]] = field(default_factory=list)
 
 NLLB_LANG_CODES: dict[str, str] = {
     "ja": "jpn_Jpan",
@@ -484,8 +493,8 @@ class MtEngine:
         tgt: str,
         *,
         on_progress: ProgressCallback | None = None,
-    ) -> str:
-        """Translate text in batches, preserving paragraphs."""
+    ) -> TranslateResult:
+        """Translate text in batches, preserving paragraphs and unit alignment."""
         if self._translator is None or self._tokenizer is None:
             raise RuntimeError("MT engine is not loaded")
 
@@ -497,65 +506,99 @@ class MtEngine:
             raise ValueError(f"Unsupported source language: {src}")
 
         segments = split_literal_segments(text)
+        progress_total = 0
+        for is_literal, content in segments:
+            if is_literal or not content.strip():
+                continue
+            progress_total += len(
+                iter_translation_units(normalize_source_for_mt(content, src, tgt))
+            )
+        progress = {"done": 0, "total": max(progress_total, 1)}
+
         built: list[tuple[bool, str]] = []
+        alignment: list[dict[str, Any]] = []
+        unit_seq = 0
+
         for is_literal, content in segments:
             if is_literal:
                 built.append((True, content))
+                if content:
+                    alignment.append(
+                        {"id": f"u{unit_seq}", "src": content, "tgt": content}
+                    )
+                    unit_seq += 1
                 continue
             if not content.strip():
                 built.append((False, content))
                 continue
-            built.append(
-                (
-                    False,
-                    self._translate_body(
-                        normalize_source_for_mt(content, src, tgt),
-                        src_code,
-                        tgt_code,
-                        on_progress=on_progress,
-                    ),
-                )
-            )
-        return join_literal_segments(built)
 
-    def _translate_body(
+            body_text, pairs = self._translate_body_with_pairs(
+                normalize_source_for_mt(content, src, tgt),
+                src_code,
+                tgt_code,
+                progress=progress,
+                on_progress=on_progress,
+            )
+            for src_unit, tgt_unit in pairs:
+                alignment.append(
+                    {
+                        "id": f"u{unit_seq}",
+                        "src": src_unit,
+                        "tgt": tgt_unit,
+                    }
+                )
+                unit_seq += 1
+            built.append((False, body_text))
+
+        return TranslateResult(
+            text=join_literal_segments(built),
+            units=alignment,
+        )
+
+    def _translate_body_with_pairs(
         self,
         text: str,
         src_code: str | None,
         tgt_code: str,
         *,
+        progress: dict[str, int],
         on_progress: ProgressCallback | None = None,
-    ) -> str:
-        """Translate a text block that contains no protected literals."""
+    ) -> tuple[str, list[tuple[str, str]]]:
+        """Translate a text block and return (joined text, src/tgt unit pairs)."""
         units = iter_translation_units(text)
-        total = len(units)
         paragraph_count = max((idx for idx, _ in units), default=0) + 1
         translated_by_para: dict[int, list[str]] = {i: [] for i in range(paragraph_count)}
+        pairs: list[tuple[str, str]] = []
 
-        done = 0
         batch_indices: list[int] = []
         batch_sentences: list[str] = []
 
+        def _report(detail: str) -> None:
+            if on_progress:
+                on_progress(progress["done"], progress["total"], detail)
+
         def _flush_batch() -> None:
-            nonlocal done, batch_indices, batch_sentences
+            nonlocal batch_indices, batch_sentences
             if not batch_sentences:
                 return
             pieces = self._translate_batch(batch_sentences, src_code, tgt_code)
             for unit_idx, piece in zip(batch_indices, pieces):
                 para_idx, original = units[unit_idx]
-                translated_by_para[para_idx].append(piece if piece else original)
-            done += len(batch_sentences)
-            if on_progress:
-                on_progress(done, total, pieces[-1] if pieces else "")
+                tgt_piece = piece if piece else original
+                translated_by_para[para_idx].append(tgt_piece)
+                pairs.append((original, tgt_piece))
+                progress["done"] += 1
+                _report(tgt_piece[:60] if tgt_piece else original[:60])
             batch_indices = []
             batch_sentences = []
 
         for unit_idx, (para_idx, sentence) in enumerate(units):
             if is_pass_through_unit(sentence):
-                translated_by_para[para_idx].append(sentence.strip())
-                done += 1
-                if on_progress:
-                    on_progress(done, total, sentence.strip())
+                tgt_piece = sentence.strip()
+                translated_by_para[para_idx].append(tgt_piece)
+                pairs.append((sentence, tgt_piece))
+                progress["done"] += 1
+                _report(tgt_piece[:60] if tgt_piece else sentence[:60])
                 continue
 
             batch_indices.append(unit_idx)
@@ -570,7 +613,7 @@ class MtEngine:
             for i in range(paragraph_count)
             if translated_by_para[i]
         ]
-        return "\n\n".join(paragraphs)
+        return "\n\n".join(paragraphs), pairs
 
     def _translate_batch(
         self,

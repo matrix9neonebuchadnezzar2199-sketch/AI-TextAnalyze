@@ -177,6 +177,9 @@ class NerEngine:
         text: str,
         *,
         on_progress: ProgressCallback | None = None,
+        progress_offset: int = 0,
+        progress_total: int | None = None,
+        progress_label: str = "",
     ) -> list[dict[str, Any]]:
         """Extract entities from text (chunked for long documents)."""
         if not text.strip():
@@ -194,12 +197,17 @@ class NerEngine:
         )
         labels = ENTITY_LABELS_CJK if has_cjk else ENTITY_LABELS
         threshold = min(self._threshold, 0.12) if has_cjk else self._threshold
-        total = len(chunks)
+        chunk_total = len(chunks)
+        total = progress_total if progress_total is not None else chunk_total
         raw: list[dict[str, Any]] = []
 
         for idx, chunk in enumerate(chunks, start=1):
+            global_idx = progress_offset + idx
             if on_progress:
-                on_progress(idx, total, f"チャンク {idx}/{total}")
+                detail = f"チャンク {idx}/{chunk_total}"
+                if progress_label:
+                    detail = f"{detail}（{progress_label}）"
+                on_progress(global_idx, total, detail)
             predictions = self._model.predict_entities(
                 chunk,
                 labels,
@@ -212,7 +220,7 @@ class NerEngine:
                 etype = LABEL_TO_TYPE.get(label)
                 if term and etype:
                     raw.append({"term": term, "type": etype, "freq": 1})
-            if CHUNK_YIELD_SECONDS > 0 and idx < total:
+            if CHUNK_YIELD_SECONDS > 0 and idx < chunk_total:
                 time.sleep(CHUNK_YIELD_SECONDS)
 
-        return aggregate_keywords(raw)
+        return raw

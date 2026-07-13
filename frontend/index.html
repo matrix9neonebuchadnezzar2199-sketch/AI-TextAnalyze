@@ -17,15 +17,6 @@
       </div>
     </div>
     <div class="spacer"></div>
-    <label class="mt-model-picker">
-      <span class="lbl">翻訳モデル</span>
-      <select id="mtModelSelect" onchange="onMtModelChange()" aria-label="翻訳モデル選択">
-        <option value="nllb-600m">NLLB 600M</option>
-        <option value="nllb-1.3b">NLLB 1.3B</option>
-      </select>
-    </label>
-    <button class="btn ghost" id="btnAttach" onclick="attachFile()">PDF / テキスト添付</button>
-    <button class="btn primary" id="btnExtract" onclick="extract()">キーワード抽出</button>
     <div class="toggle" id="themeToggle">
       <button data-t="light" onclick="setTheme('light')">Light</button>
       <button data-t="dark" class="active" onclick="setTheme('dark')">Dark</button>
@@ -60,22 +51,36 @@
         <span class="source-rail-count" id="charCountRail">0</span>
       </button>
       <div class="panel-body source-body">
-        <textarea id="source" placeholder="ここにテキストを貼り付け、または「PDF / テキスト添付」から読み込みます…" oninput="onSourceInput()"></textarea>
+        <div
+          id="source"
+          class="text-surface source-surface"
+          contenteditable="true"
+          spellcheck="false"
+          data-placeholder="ここにテキストを貼り付け、または「PDF / テキスト添付」から読み込みます…"
+        ></div>
       </div>
       <div class="panel-foot source-foot">
-        <button class="btn ghost" onclick="clearAll()">クリア</button>
+        <button class="btn ghost" id="btnAttach" type="button" onclick="attachFile()">PDF / テキスト添付</button>
+        <button class="btn ghost" type="button" onclick="clearAll()">クリア</button>
         <span class="hint">自動言語判定: <b id="detLang">—</b></span>
       </div>
     </div>
 
-    <div class="main-panels">
-      <div class="panel">
-        <div class="panel-head">
-          <span class="dot" style="background:#9b59f6"></span> 翻訳 / Translation
-        </div>
-        <div class="trans-controls">
+    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="本文と翻訳の幅を変更"></div>
+
+    <div class="main-panels" id="mainPanels">
+      <div class="panel panel-translate">
+        <div class="panel-head trans-head">
+          <span class="dot" style="background:#9b59f6"></span>
+          <span class="panel-title">翻訳 / Translation</span>
+          <label class="mt-model-picker compact">
+            <select id="mtModelSelect" onchange="onMtModelChange()" aria-label="翻訳モデル選択">
+              <option value="nllb-600m">NLLB 600M</option>
+              <option value="nllb-1.3b">NLLB 1.3B</option>
+            </select>
+          </label>
           <span class="lbl">翻訳元</span>
-          <select id="srcLang">
+          <select id="srcLang" aria-label="翻訳元言語">
             <option value="auto">自動判定</option>
             <option value="ja">日本語</option>
             <option value="en">English</option>
@@ -83,34 +88,38 @@
             <option value="ru">Русский</option>
             <option value="ko">한국어</option>
           </select>
-          <button class="swap" title="入れ替え" onclick="swapLang()">⇄</button>
+          <button class="swap" type="button" title="入れ替え" aria-label="翻訳元と翻訳後を入れ替え" onclick="swapLang()">⇄</button>
           <span class="lbl">翻訳後</span>
-          <select id="tgtLang">
+          <select id="tgtLang" aria-label="翻訳後言語">
             <option value="ja" selected>日本語</option>
             <option value="en">English</option>
             <option value="zh">中文</option>
             <option value="ru">Русский</option>
             <option value="ko">한국어</option>
           </select>
-          <button class="btn primary" id="btnTranslate" style="margin-left:auto" onclick="translateText()">翻訳実行</button>
+          <button class="btn primary" id="btnTranslate" type="button" onclick="translateText()">翻訳実行</button>
         </div>
         <div class="panel-body">
-          <textarea id="target" placeholder="翻訳結果がここに表示されます…" readonly></textarea>
+          <div id="targetView" class="text-surface target-surface" aria-label="翻訳結果">
+            <div class="target-empty">翻訳結果がここに表示されます…</div>
+          </div>
         </div>
       </div>
 
       <div class="panel panel-keywords">
-        <div class="panel-head">
-          <span class="dot" style="background:#2e8b57"></span> 抽出キーワード
+        <div class="panel-head kw-head">
+          <span class="dot" style="background:#2e8b57"></span>
+          <span class="panel-title">抽出キーワード</span>
           <span class="count" id="kwCount">0 件</span>
+          <button class="btn primary" id="btnExtract" type="button" onclick="extract()">キーワード抽出</button>
         </div>
         <div class="kw-toolbar">
-          <button class="chip on" data-f="all" onclick="filterKw(this)">すべて</button>
-          <button class="chip" data-f="per" onclick="filterKw(this)">人名</button>
-          <button class="chip" data-f="country" onclick="filterKw(this)">国名</button>
-          <button class="chip" data-f="city" onclick="filterKw(this)">地名</button>
-          <button class="chip" data-f="org" onclick="filterKw(this)">組織</button>
-          <button class="chip" style="margin-left:auto" onclick="toggleRaw()">リスト表示</button>
+          <button class="chip on" data-f="all" type="button" onclick="filterKw(this)">すべて</button>
+          <button class="chip" data-f="per" type="button" onclick="filterKw(this)">人名</button>
+          <button class="chip" data-f="country" type="button" onclick="filterKw(this)">国名</button>
+          <button class="chip" data-f="city" type="button" onclick="filterKw(this)">地名</button>
+          <button class="chip" data-f="org" type="button" onclick="filterKw(this)">組織</button>
+          <button class="chip" style="margin-left:auto" type="button" onclick="toggleRaw()">リスト表示</button>
         </div>
         <div class="kw-list" id="kwList">
           <div class="kw-empty" style="padding:24px 14px;color:var(--text-sub);font-size:12.5px;text-align:center;">
@@ -119,7 +128,7 @@
         </div>
         <pre class="kw-raw" id="kwRaw"></pre>
         <div class="panel-foot">
-          <button class="btn ghost" onclick="copyRaw()">リストをコピー</button>
+          <button class="btn ghost" type="button" onclick="copyRaw()">リストをコピー</button>
           <span class="hint" id="kwHint">—</span>
         </div>
       </div>

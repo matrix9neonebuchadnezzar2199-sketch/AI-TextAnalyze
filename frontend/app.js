@@ -3,6 +3,10 @@
 let currentFilter = "all";
 let showRaw = false;
 let allKeywords = [];
+let selectedKeywordKeys = new Set();
+let alignmentUnits = [];
+let activeUnitId = null;
+let sourceHighlightDebounce = null;
 let modelStatus = {
   ner_available: false,
   mt_available: false,
@@ -13,6 +17,7 @@ let modelStatus = {
 const MT_STORAGE_KEY = "ai-textanalyze-mt-model";
 const THEME_STORAGE_KEY = "ai-textanalyze-theme";
 const SOURCE_SIDEBAR_KEY = "ai-textanalyze-source-collapsed";
+const SOURCE_WIDTH_KEY = "ai-textanalyze-source-width";
 
 const TYPE_LABELS = {
   per: "人名",
@@ -34,6 +39,44 @@ async function apiCall(method, ...args) {
   } catch (err) {
     return { ok: false, error: String(err) };
   }
+}
+
+function keywordKey(kw) {
+  return `${kw.type}|${kw.term.toLowerCase()}`;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getSourceEl() {
+  return document.getElementById("source");
+}
+
+function getSourceText() {
+  return getSourceEl().innerText || "";
+}
+
+function setSourceText(text) {
+  const el = getSourceEl();
+  el.textContent = text || "";
+  refreshSourceDisplay();
+}
+
+function getTargetPlainText() {
+  if (!alignmentUnits.length) {
+    const view = document.getElementById("targetView");
+    return view?.innerText?.trim() ? view.innerText : "";
+  }
+  return alignmentUnits.map((u) => u.tgt).join("\n\n");
 }
 
 function setTheme(t) {
@@ -64,26 +107,71 @@ function toggleSourceSidebar() {
   applySourceCollapsed(!workspace.classList.contains("source-collapsed"));
 }
 
+function initSplitter() {
+  const splitter = document.getElementById("splitter");
+  const workspace = document.getElementById("workspace");
+  if (!splitter || !workspace) return;
+
+  const saved = localStorage.getItem(SOURCE_WIDTH_KEY);
+  if (saved) {
+    const px = parseInt(saved, 10);
+    if (px >= 220 && px <= 900) {
+      workspace.style.setProperty("--source-col-width", `${px}px`);
+    }
+  }
+
+  let dragging = false;
+
+  splitter.addEventListener("mousedown", (e) => {
+    if (workspace.classList.contains("source-collapsed")) return;
+    dragging = true;
+    splitter.classList.add("dragging");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const rect = workspace.getBoundingClientRect();
+    const width = Math.min(900, Math.max(220, e.clientX - rect.left - 12));
+    workspace.style.setProperty("--source-col-width", `${width}px`);
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove("dragging");
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    const val = workspace.style.getPropertyValue("--source-col-width");
+    if (val) {
+      const px = parseInt(val, 10);
+      if (!Number.isNaN(px)) localStorage.setItem(SOURCE_WIDTH_KEY, String(px));
+    }
+  });
+}
+
 function status(msg) {
   document.getElementById("statusMsg").textContent = msg;
 }
 
-function showProgress(message, current = 0, total = 0) {
+function showProgress(message, current = 0, total = 0, detail = "") {
   const overlay = document.getElementById("progressOverlay");
   const label = document.getElementById("progressLabel");
   const bar = document.getElementById("progressBar");
-  const detail = document.getElementById("progressDetail");
+  const detailEl = document.getElementById("progressDetail");
   overlay.style.display = "flex";
   label.textContent = message || "処理中…";
   bar.classList.remove("indeterminate");
   if (total > 0) {
     const pct = Math.min(100, Math.round((current / total) * 100));
     bar.style.width = pct + "%";
-    detail.textContent = `${current} / ${total}`;
+    detailEl.textContent = detail || `${current} / ${total}`;
   } else {
     bar.style.width = "35%";
     bar.classList.add("indeterminate");
-    detail.textContent = "";
+    detailEl.textContent = detail || "";
   }
 }
 
@@ -138,8 +226,6 @@ async function onMtModelChange() {
 
   sel.disabled = true;
   document.getElementById("btnTranslate").disabled = true;
-  showProgress("翻訳モデルロード中…", 0, 0);
-  status("翻訳モデルをロード中…");
 
   const res = await apiCall("select_mt_model", modelId);
   hideProgress();
@@ -165,10 +251,148 @@ function initUiPrefs() {
   const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
   setTheme(savedTheme === "light" ? "light" : "dark");
   applySourceCollapsed(localStorage.getItem(SOURCE_SIDEBAR_KEY) === "1");
+  initSplitter();
+}
+
+function buildHighlightRanges(text, terms) {
+  const ranges = [];
+  for (const term of terms) {
+    if (!term) continue;
+    const re = new RegExp(escapeRegex(term), "gi");
+    let match;
+    while ((match = re.exec(text)) !== null) {
+      ranges.push({ start: match.index, end: match.index + match[0].length, className: "kw-mark" });
+      if (match.index === re.lastIndex) re.lastIndex++;
+    }
+  }
+  ranges.sort((a, b) => a.start - b.start || b.end - a.end);
+  const merged = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r.start < last.end) continue;
+    merged.push(r);
+  }
+  return merged;
+}
+
+function applyRangesToHtml(text, ranges, extraClass = "") {
+  if (!text) return "";
+  if (!ranges.length) return escapeHtml(text);
+  let html = "";
+  let pos = 0;
+  for (const r of ranges) {
+    if (r.start > pos) html += escapeHtml(text.slice(pos, r.start));
+    const cls = r.className + (extraClass ? ` ${extraClass}` : "");
+    html += `<mark class="${cls}">${escapeHtml(text.slice(r.start, r.end))}</mark>`;
+    pos = r.end;
+  }
+  if (pos < text.length) html += escapeHtml(text.slice(pos));
+  return html;
+}
+
+function computeUnitOffsets(text, units) {
+  let pos = 0;
+  for (const u of units) {
+    const src = u.src || "";
+    if (!src) {
+      u.srcStart = -1;
+      u.srcEnd = -1;
+      continue;
+    }
+    const idx = text.indexOf(src, pos);
+    if (idx >= 0) {
+      u.srcStart = idx;
+      u.srcEnd = idx + src.length;
+      pos = idx + src.length;
+    } else {
+      u.srcStart = -1;
+      u.srcEnd = -1;
+    }
+  }
+}
+
+function getSelectedTerms() {
+  return allKeywords
+    .filter((k) => selectedKeywordKeys.has(keywordKey(k)))
+    .map((k) => k.term);
+}
+
+function refreshSourceDisplay() {
+  const el = getSourceEl();
+  const text = getSourceText();
+  const terms = getSelectedTerms();
+  const ranges = buildHighlightRanges(text, terms);
+
+  if (activeUnitId) {
+    const unit = alignmentUnits.find((u) => u.id === activeUnitId);
+    if (unit && unit.srcStart >= 0 && unit.srcEnd > unit.srcStart) {
+      ranges.push({
+        start: unit.srcStart,
+        end: unit.srcEnd,
+        className: "align-hl source-span",
+      });
+      ranges.sort((a, b) => a.start - b.start);
+    }
+  }
+
+  const hadFocus = document.activeElement === el;
+  el.innerHTML = applyRangesToHtml(text, ranges);
+  if (hadFocus) el.focus();
+}
+
+function renderTargetUnits(units) {
+  const view = document.getElementById("targetView");
+  if (!units?.length) {
+    view.innerHTML = '<div class="target-empty">翻訳結果がここに表示されます…</div>';
+    return;
+  }
+
+  const terms = getSelectedTerms();
+  view.innerHTML = units
+    .map((u) => {
+      const active = u.id === activeUnitId ? " align-hl" : "";
+      const ranges = buildHighlightRanges(u.tgt || "", terms);
+      const inner = applyRangesToHtml(u.tgt || "", ranges);
+      return `<div class="mt-unit${active}" data-unit-id="${escapeHtml(u.id)}" role="button" tabindex="0">${inner || "&nbsp;"}</div>`;
+    })
+    .join("");
+
+  view.querySelectorAll(".mt-unit").forEach((node) => {
+    node.addEventListener("click", () => onUnitClick(node.dataset.unitId));
+    node.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onUnitClick(node.dataset.unitId);
+      }
+    });
+  });
+}
+
+function onUnitClick(unitId) {
+  if (activeUnitId === unitId) {
+    activeUnitId = null;
+  } else {
+    activeUnitId = unitId;
+  }
+  renderTargetUnits(alignmentUnits);
+  refreshSourceDisplay();
+}
+
+function refreshAllHighlights() {
+  refreshSourceDisplay();
+  if (alignmentUnits.length) renderTargetUnits(alignmentUnits);
 }
 
 async function initApp() {
   initUiPrefs();
+  const sourceEl = getSourceEl();
+  sourceEl.addEventListener("input", onSourceInput);
+  sourceEl.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const text = e.clipboardData?.getData("text/plain") || "";
+    document.execCommand("insertText", false, text);
+  });
+
   const res = await apiCall("get_model_status");
   if (res.ok) {
     modelStatus = res;
@@ -200,7 +424,7 @@ async function initApp() {
 }
 
 function updateCount() {
-  const n = document.getElementById("source").value.length;
+  const n = getSourceText().length;
   document.getElementById("charCount").textContent = n.toLocaleString() + " 文字";
   const rail = document.getElementById("charCountRail");
   if (rail) rail.textContent = n.toLocaleString();
@@ -208,7 +432,12 @@ function updateCount() {
 
 async function onSourceInput() {
   updateCount();
-  const text = document.getElementById("source").value;
+  alignmentUnits = [];
+  activeUnitId = null;
+  clearTimeout(sourceHighlightDebounce);
+  sourceHighlightDebounce = setTimeout(() => refreshSourceDisplay(), 200);
+
+  const text = getSourceText();
   if (!text.trim()) {
     document.getElementById("detLang").textContent = "—";
     return;
@@ -230,7 +459,10 @@ async function attachFile() {
     status("キャンセルしました");
     return;
   }
-  document.getElementById("source").value = res.text || "";
+  setSourceText(res.text || "");
+  alignmentUnits = [];
+  activeUnitId = null;
+  renderTargetUnits([]);
   updateCount();
   if (res.display) {
     document.getElementById("detLang").textContent = res.display;
@@ -241,9 +473,12 @@ async function attachFile() {
 }
 
 function clearAll() {
-  document.getElementById("source").value = "";
-  document.getElementById("target").value = "";
+  setSourceText("");
+  alignmentUnits = [];
+  activeUnitId = null;
   allKeywords = [];
+  selectedKeywordKeys.clear();
+  renderTargetUnits([]);
   document.getElementById("kwList").innerHTML =
     '<div class="kw-empty" style="padding:24px 14px;color:var(--text-sub);font-size:12.5px;text-align:center;">「キーワード抽出」を実行すると<br>ここに人名・国名・地名・組織が並びます。</div>';
   document.getElementById("kwRaw").textContent = "";
@@ -255,22 +490,36 @@ function clearAll() {
 }
 
 async function extract() {
-  const text = document.getElementById("source").value.trim();
-  if (!text) {
-    status("本文が空です");
+  const source = getSourceText().trim();
+  const target = getTargetPlainText().trim();
+  if (!source && !target) {
+    status("本文・翻訳が空です");
     return;
   }
-  showProgress("キーワード抽出中…", 0, 0);
   status("抽出中…");
-  const res = await apiCall("extract_keywords", text);
+  const res = await apiCall("extract_keywords", source, target);
   hideProgress();
   if (!res.ok) {
     status(res.error || "抽出失敗");
     return;
   }
   allKeywords = res.keywords || [];
+  selectedKeywordKeys.clear();
   renderKw();
-  status(`抽出完了（${allKeywords.length} 件）`);
+  refreshAllHighlights();
+  const scope = res.scope ? `（${res.scope}）` : "";
+  status(`抽出完了（${allKeywords.length} 件${scope}）`);
+}
+
+function toggleKeywordSelection(kw) {
+  const key = keywordKey(kw);
+  if (selectedKeywordKeys.has(key)) {
+    selectedKeywordKeys.delete(key);
+  } else {
+    selectedKeywordKeys.add(key);
+  }
+  renderKw();
+  refreshAllHighlights();
 }
 
 function renderKw() {
@@ -283,27 +532,33 @@ function renderKw() {
       '<div style="padding:24px 14px;color:var(--text-sub);font-size:12.5px;text-align:center;">該当キーワードがありません</div>';
   } else {
     box.innerHTML = list
-      .map(
-        (k) => `
-      <div class="kw-item">
+      .map((k) => {
+        const sel = selectedKeywordKeys.has(keywordKey(k)) ? " selected" : "";
+        return `
+      <div class="kw-item${sel}" data-key="${escapeHtml(keywordKey(k))}" role="button" tabindex="0">
         <span class="kw-badge b-${k.type}">${TYPE_LABELS[k.type] || k.type}</span>
         <span class="kw-term">${escapeHtml(k.term)}</span>
         <span class="kw-freq">×${k.freq}</span>
-      </div>`
-      )
+      </div>`;
+      })
       .join("");
+
+    box.querySelectorAll(".kw-item").forEach((node) => {
+      const key = node.dataset.key;
+      const kw = list.find((k) => keywordKey(k) === key);
+      if (!kw) return;
+      node.addEventListener("click", () => toggleKeywordSelection(kw));
+      node.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggleKeywordSelection(kw);
+        }
+      });
+    });
   }
   document.getElementById("kwCount").textContent = list.length + " 件";
   document.getElementById("kwHint").textContent = "全 " + allKeywords.length + " 件抽出";
   document.getElementById("kwRaw").textContent = list.map((k) => k.term).join("\n");
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function filterKw(btn) {
@@ -329,14 +584,13 @@ function copyRaw() {
 }
 
 async function translateText() {
-  const src = document.getElementById("source").value.trim();
+  const src = getSourceText().trim();
   if (!src) {
     status("本文が空です");
     return;
   }
   const srcLang = document.getElementById("srcLang").value;
   const tgtLang = document.getElementById("tgtLang").value;
-  showProgress("翻訳中…", 0, 0);
   status("翻訳中…");
   const res = await apiCall("translate", src, srcLang, tgtLang);
   hideProgress();
@@ -344,7 +598,11 @@ async function translateText() {
     status(res.error || "翻訳失敗");
     return;
   }
-  document.getElementById("target").value = res.text || "";
+  alignmentUnits = res.units || [];
+  activeUnitId = null;
+  computeUnitOffsets(src, alignmentUnits);
+  renderTargetUnits(alignmentUnits);
+  refreshSourceDisplay();
   status("翻訳完了");
 }
 
@@ -365,7 +623,6 @@ if (hasApi()) {
   initApp();
 }
 
-// pywebview bridge から呼ばれる
 window.status = status;
 window.showProgress = showProgress;
 window.hideProgress = hideProgress;

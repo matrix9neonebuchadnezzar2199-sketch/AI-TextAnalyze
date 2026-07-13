@@ -51,10 +51,10 @@ def main() -> int:
         result = engine.translate(text, src, tgt)
         elapsed = time.time() - t0
         dest = OUT / f"{path.stem}__{args.mt}__{src}-{tgt}.txt"
-        dest.write_text(result, encoding="utf-8")
-        print(f"saved {dest.name} in {elapsed:.1f}s  out_chars={len(result)}", flush=True)
+        dest.write_text(result.text, encoding="utf-8")
+        print(f"saved {dest.name} in {elapsed:.1f}s  out_chars={len(result.text)}", flush=True)
         print("--- preview ---", flush=True)
-        print(result[:900], flush=True)
+        print(result.text[:900], flush=True)
 
     if args.ner:
         print("\n=== NER ===", flush=True)

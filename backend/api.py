@@ -9,6 +9,7 @@ from typing import Any
 
 from backend.lang_detect import detect_language, lang_display_name
 from backend.model_manager import ModelManager
+from backend.ner_engine import aggregate_keywords, chunk_text
 from backend.pdf_reader import read_text_file
 
 logger = logging.getLogger(__name__)
@@ -42,9 +43,18 @@ class Api:
         payload = json.dumps(message, ensure_ascii=False)
         self._evaluate(f"status({payload})")
 
-    def _show_progress(self, message: str, current: int = 0, total: int = 0) -> None:
+    def _show_progress(
+        self,
+        message: str,
+        current: int = 0,
+        total: int = 0,
+        detail: str = "",
+    ) -> None:
         payload = json.dumps(message, ensure_ascii=False)
-        self._evaluate(f"showProgress({payload}, {int(current)}, {int(total)})")
+        detail_payload = json.dumps(detail, ensure_ascii=False)
+        self._evaluate(
+            f"showProgress({payload}, {int(current)}, {int(total)}, {detail_payload})"
+        )
 
     def _hide_progress(self) -> None:
         self._evaluate("hideProgress()")
@@ -76,7 +86,7 @@ class Api:
             return self._ok(warmed=True, cached=True, selected_mt_id=self._manager.selected_mt_id)
 
         try:
-            self._show_progress("翻訳モデル起動中…", 0, 0)
+            self._show_progress("翻訳モデル起動中…", 0, 0, "モデルを読み込んでいます")
             self._set_status("翻訳モデルを起動中…")
             self._manager.load_mt()
             self._hide_progress()
@@ -118,7 +128,7 @@ class Api:
             )
 
         try:
-            self._show_progress("翻訳モデルロード中…", 0, 0)
+            self._show_progress("翻訳モデルロード中…", 0, 0, "モデルを切り替えています")
             self._set_status("翻訳モデルをロード中…")
             self._manager.load_mt()
             self._hide_progress()
@@ -161,28 +171,65 @@ class Api:
         except Exception as exc:
             return self._err(str(exc))
 
-    def extract_keywords(self, text: str) -> dict[str, Any]:
-        if not (text or "").strip():
+    def _ner_chunk_total(self, source_text: str, target_text: str) -> tuple[int, int]:
+        """Return chunk counts for source and target texts."""
+        from backend.mt_engine import collapse_pdf_spacing
+
+        src_chunks = len(chunk_text(collapse_pdf_spacing(source_text))) if source_text.strip() else 0
+        tgt_chunks = len(chunk_text(collapse_pdf_spacing(target_text))) if target_text.strip() else 0
+        return src_chunks, tgt_chunks
+
+    def extract_keywords(self, source_text: str, target_text: str = "") -> dict[str, Any]:
+        source = (source_text or "").strip()
+        target = (target_text or "").strip()
+        if not source and not target:
             return self._err("本文が空です")
         if self._manager.ner_model() is None:
             return self._err("NER モデルが見つかりません。model/ に GLiNER ONNX を配置してください。")
 
         try:
             if not self._manager.ner_is_loaded():
-                self._show_progress("NER モデルロード中…", 0, 0)
+                self._show_progress("NER モデルロード中…", 0, 0, "モデルを読み込んでいます")
                 self._set_status("NER モデルをロード中…")
 
             engine = self._manager.load_ner()
+            src_chunks, tgt_chunks = self._ner_chunk_total(source, target)
+            total_chunks = src_chunks + tgt_chunks
+            if total_chunks == 0:
+                return self._err("抽出対象テキストがありません")
 
-            def on_progress(current: int, total: int, _detail: str) -> None:
-                self._show_progress("キーワード抽出中…", current, total)
+            raw: list[dict[str, Any]] = []
+
+            def on_progress(current: int, total: int, detail: str) -> None:
+                self._show_progress("キーワード抽出中…", current, total, detail)
                 self._set_status(f"キーワード抽出中… {current}/{total}")
 
-            keywords = engine.extract(text, on_progress=on_progress)
-            # NER はセッション中保持（翻訳時のみ排他で入れ替え）
+            if source:
+                raw.extend(
+                    engine.extract(
+                        source,
+                        on_progress=on_progress,
+                        progress_offset=0,
+                        progress_total=total_chunks,
+                        progress_label="本文",
+                    )
+                )
+            if target:
+                raw.extend(
+                    engine.extract(
+                        target,
+                        on_progress=on_progress,
+                        progress_offset=src_chunks,
+                        progress_total=total_chunks,
+                        progress_label="翻訳",
+                    )
+                )
+
+            keywords = aggregate_keywords(raw)
             self._hide_progress()
-            self._set_status(f"抽出完了（{len(keywords)} 件）")
-            return self._ok(keywords=keywords)
+            scope = "本文+翻訳" if source and target else ("翻訳" if target and not source else "本文")
+            self._set_status(f"抽出完了（{len(keywords)} 件・{scope}）")
+            return self._ok(keywords=keywords, scope=scope)
         except Exception as exc:
             logger.exception("extract_keywords failed")
             self._hide_progress()
@@ -201,16 +248,21 @@ class Api:
                 resolved_src = detect_language(text)
 
             if not self._manager.mt_is_loaded():
-                self._show_progress("翻訳モデルロード中…", 0, 0)
+                self._show_progress("翻訳モデルロード中…", 0, 0, "モデルを読み込んでいます")
                 self._set_status("翻訳モデルをロード中…")
             else:
-                self._show_progress("翻訳中…", 0, 0)
-                self._set_status("翻訳中…")
+                self._show_progress("翻訳中…", 0, 1, "準備中")
 
             engine = self._manager.load_mt()
 
-            def on_progress(current: int, total: int, _piece: str) -> None:
-                self._show_progress("翻訳中…", current, total)
+            def on_progress(current: int, total: int, detail: str) -> None:
+                label = detail[:80] if detail else ""
+                self._show_progress(
+                    "翻訳中…",
+                    current,
+                    total,
+                    f"文 {current}/{total}" + (f" — {label}" if label else ""),
+                )
                 self._set_status(f"翻訳中… {current}/{total} 文")
 
             result = engine.translate(
@@ -221,7 +273,12 @@ class Api:
             )
             self._hide_progress()
             self._set_status("翻訳完了")
-            return self._ok(text=result, src=resolved_src, tgt=tgt)
+            return self._ok(
+                text=result.text,
+                units=result.units,
+                src=resolved_src,
+                tgt=tgt,
+            )
         except Exception as exc:
             logger.exception("translate failed: %s", traceback.format_exc())
             self._manager.unload_mt()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -36,9 +37,16 @@ class DetectedModel:
     path: Path
 
 
+def app_root() -> Path:
+    """プロジェクト／配布ルート（開発時はリポジトリ根、凍結時は exe ディレクトリ）。"""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
 def default_model_dir() -> Path:
-    """Resolve the model directory relative to project root."""
-    return Path(__file__).resolve().parent.parent / "model"
+    """Resolve the model directory next to the app root."""
+    return app_root() / "model"
 
 
 def _has_ct2_model(folder: Path) -> bool:

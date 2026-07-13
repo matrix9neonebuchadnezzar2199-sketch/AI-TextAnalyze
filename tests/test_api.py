@@ -16,9 +16,15 @@ def test_get_model_status_empty(tmp_path: Path) -> None:
 
 def test_extract_keywords_empty_text(tmp_path: Path) -> None:
     api = Api(ModelManager(tmp_path))
-    res = api.extract_keywords("  ")
+    res = api.extract_keywords("  ", "")
     assert res["ok"] is False
     assert "空" in res["error"]
+
+
+def test_extract_keywords_target_only_rejected(tmp_path: Path) -> None:
+    api = Api(ModelManager(tmp_path))
+    res = api.extract_keywords("", "  ")
+    assert res["ok"] is False
 
 
 def test_detect_language_api() -> None:

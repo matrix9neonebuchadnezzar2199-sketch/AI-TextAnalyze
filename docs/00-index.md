@@ -3,6 +3,7 @@
 | ドキュメント | 用途 |
 |-------------|------|
 | [SPEC.md](./SPEC.md) | 開発設計図（正本・絶対制約） |
+| [2026-07-14_開発日記.html](./2026-07-14_開発日記.html) | 開発日記（配布ビルド・UI/UX 改修） |
 | [user-stories/README.md](./user-stories/README.md) | All_Status ユーザーストーリー管理 |
 | [user-stories/user-stories-matrix.csv](./user-stories/user-stories-matrix.csv) | ストーリーマトリクス |
 | [../model/README.md](../model/README.md) | モデル配置手順 |

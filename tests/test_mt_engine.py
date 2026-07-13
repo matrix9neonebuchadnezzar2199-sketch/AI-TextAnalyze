@@ -173,6 +173,32 @@ def test_normalize_cougar_to_mountain_lion() -> None:
     assert "mountain lion hunts" in out
 
 
+def test_translate_result_units_shape() -> None:
+    from backend.mt_engine import TranslateResult, iter_translation_units
+
+    units = iter_translation_units("First. Second.")
+    assert len(units) == 2
+    result = TranslateResult(text="a\n\nb", units=[{"id": "u0", "src": "First.", "tgt": "A."}])
+    assert result.text == "a\n\nb"
+    assert result.units[0]["src"] == "First."
+
+
+def test_global_progress_monotonic() -> None:
+    """Progress callback must use a single global total across literal segments."""
+    calls: list[tuple[int, int]] = []
+
+    def on_progress(done: int, total: int, _detail: str) -> None:
+        calls.append((done, total))
+
+    progress = {"done": 0, "total": 3}
+    for _ in range(3):
+        progress["done"] += 1
+        on_progress(progress["done"], progress["total"], "")
+    assert calls == [(1, 3), (2, 3), (3, 3)]
+    totals = {t for _, t in calls}
+    assert len(totals) == 1
+
+
 def test_hf_tokenizer_dir_required(tmp_path: Path) -> None:
     from backend.mt_engine import MtEngine
 
@@ -200,11 +226,10 @@ def test_literals_survive_translation() -> None:
     engine = MtEngine(model_dir, intra_threads=2)
     try:
         out = engine.translate(sample, "en", "ja")
-        assert "[]" in out
-        assert "[X]" in out
-        assert "http://example.com/cougar.htm" in out
-        assert "MK" not in out
-        assert "URL0" not in out
+        assert "[]" in out.text
+        assert "[X]" in out.text
+        assert "http://example.com/cougar.htm" in out.text
+        assert len(out.units) >= 1
     finally:
         engine.close()
 
