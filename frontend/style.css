@@ -347,8 +347,17 @@ textarea::placeholder { color: var(--text-sub); }
   color: var(--text-sub);
   pointer-events: none;
 }
+.source-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
 .source-surface {
   min-height: 100%;
+}
+.align-units-view {
+  flex: 1;
 }
 .target-surface {
   min-height: 100%;

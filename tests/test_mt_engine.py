@@ -104,11 +104,14 @@ def test_split_literal_segments() -> None:
     ]
 
 
-def test_split_literal_segments_preserves_legal_citations() -> None:
-    text = "Affiliated per Section 1260H(g)(2)(B)(i)(I) and (ii)."
+def test_split_literal_segments_preserves_urls_not_legal_cites() -> None:
+    """Legal cites stay in prose (shielded later); URLs remain literal segments."""
+    text = "See http://example.com and Section 1260H(g)(2)(B)(i)(I)."
     segments = split_literal_segments(text)
     literals = [seg for is_lit, seg in segments if is_lit]
-    assert literals == ["Section 1260H(g)(2)(B)(i)(I)"]
+    assert literals == ["http://example.com"]
+    prose = "".join(seg for is_lit, seg in segments if not is_lit)
+    assert "1260H" in prose
     assert not any(seg == "(2)" for _, seg in segments)
 
 
@@ -197,6 +200,61 @@ def test_global_progress_monotonic() -> None:
     assert calls == [(1, 3), (2, 3), (3, 3)]
     totals = {t for _, t in calls}
     assert len(totals) == 1
+
+
+def test_collapse_legal_citation_breaks() -> None:
+    from backend.mt_engine import collapse_legal_citation_breaks
+
+    text = "affiliated (Section\n1260H(g)(2)\n(B)(i)(I))."
+    out = collapse_legal_citation_breaks(text)
+    assert "Section 1260H(g)(2)(B)(i)(I)" in out
+
+
+def test_regulatory_gloss_and_ja_post() -> None:
+    from backend.mt_engine import apply_ja_post_fixes, apply_regulatory_gloss_en
+
+    glossed = apply_regulatory_gloss_en(
+        "Chinese military companies and military-civil fusion"
+    )
+    assert "Chinese military enterprises" in glossed
+    assert "MCF military-civil fusion" in glossed
+    assert apply_ja_post_fixes("中国軍人会社と軍事民間の融合") == "中国軍事企業と軍民融合"
+
+
+def test_shield_legal_cites_roundtrip() -> None:
+    from backend.mt_engine import restore_legal_cites, shield_legal_cites
+
+    src = "owned by SASAC (Section 1260H(g)(2)(B)(i)(I))."
+    shielded, cites = shield_legal_cites(src)
+    assert "1260H" not in shielded
+    assert "ZZREF0ZZ" in shielded
+    assert restore_legal_cites(shielded, cites) == src
+
+
+def test_william_mac_not_sentence_split() -> None:
+    from backend.mt_engine import split_sentences
+
+    text = (
+        "Section 1260H of the William M. (Mac) Thornberry National Defense "
+        "Authorization Act for Fiscal Year 2021."
+    )
+    parts = split_sentences(text)
+    assert len(parts) == 1
+
+
+def test_collapse_preserves_paragraph_breaks() -> None:
+    text = "Title line one\ncontinued.\n\n360 Security Technology Inc. (Qihoo 360)\n\n• Body."
+    out = collapse_soft_linebreaks(text)
+    assert "\n\n360 Security" in out
+    assert "\n\n• Body." in out
+
+
+def test_entity_line_not_split_on_inc() -> None:
+    from backend.mt_engine import chunk_paragraph, split_sentences
+
+    name = "360 Security Technology Inc. (Qihoo 360)"
+    assert chunk_paragraph(name) == [name]
+    assert len(split_sentences(name)) == 1
 
 
 def test_hf_tokenizer_dir_required(tmp_path: Path) -> None:

@@ -7,6 +7,9 @@ let selectedKeywordKeys = new Set();
 let alignmentUnits = [];
 let activeUnitId = null;
 let sourceHighlightDebounce = null;
+/** 翻訳後は本文も unit ブロック表示（正規化差分で indexOf が外れるのを避ける） */
+let sourceAlignMode = false;
+let sourcePlainBackup = "";
 let modelStatus = {
   ner_available: false,
   mt_available: false,
@@ -62,13 +65,39 @@ function getSourceEl() {
 }
 
 function getSourceText() {
+  if (sourceAlignMode) return sourcePlainBackup;
   return getSourceEl().innerText || "";
 }
 
 function setSourceText(text) {
+  exitSourceAlignMode();
   const el = getSourceEl();
   el.textContent = text || "";
   refreshSourceDisplay();
+}
+
+function exitSourceAlignMode() {
+  if (!sourceAlignMode) return;
+  sourceAlignMode = false;
+  const view = document.getElementById("sourceAlignView");
+  if (view) {
+    view.hidden = true;
+    view.innerHTML = "";
+  }
+  const el = getSourceEl();
+  el.hidden = false;
+  el.contentEditable = "true";
+}
+
+function enterSourceAlignMode(units) {
+  sourcePlainBackup = getSourceEl().innerText || sourcePlainBackup;
+  sourceAlignMode = true;
+  const el = getSourceEl();
+  el.hidden = true;
+  el.contentEditable = "false";
+  const view = document.getElementById("sourceAlignView");
+  if (view) view.hidden = false;
+  renderSourceUnits(units);
 }
 
 function getTargetPlainText() {
@@ -290,27 +319,6 @@ function applyRangesToHtml(text, ranges, extraClass = "") {
   return html;
 }
 
-function computeUnitOffsets(text, units) {
-  let pos = 0;
-  for (const u of units) {
-    const src = u.src || "";
-    if (!src) {
-      u.srcStart = -1;
-      u.srcEnd = -1;
-      continue;
-    }
-    const idx = text.indexOf(src, pos);
-    if (idx >= 0) {
-      u.srcStart = idx;
-      u.srcEnd = idx + src.length;
-      pos = idx + src.length;
-    } else {
-      u.srcStart = -1;
-      u.srcEnd = -1;
-    }
-  }
-}
-
 function getSelectedTerms() {
   return allKeywords
     .filter((k) => selectedKeywordKeys.has(keywordKey(k)))
@@ -318,46 +326,21 @@ function getSelectedTerms() {
 }
 
 function refreshSourceDisplay() {
+  if (sourceAlignMode) {
+    renderSourceUnits(alignmentUnits);
+    return;
+  }
   const el = getSourceEl();
   const text = getSourceText();
   const terms = getSelectedTerms();
   const ranges = buildHighlightRanges(text, terms);
-
-  if (activeUnitId) {
-    const unit = alignmentUnits.find((u) => u.id === activeUnitId);
-    if (unit && unit.srcStart >= 0 && unit.srcEnd > unit.srcStart) {
-      ranges.push({
-        start: unit.srcStart,
-        end: unit.srcEnd,
-        className: "align-hl source-span",
-      });
-      ranges.sort((a, b) => a.start - b.start);
-    }
-  }
-
   const hadFocus = document.activeElement === el;
   el.innerHTML = applyRangesToHtml(text, ranges);
   if (hadFocus) el.focus();
 }
 
-function renderTargetUnits(units) {
-  const view = document.getElementById("targetView");
-  if (!units?.length) {
-    view.innerHTML = '<div class="target-empty">翻訳結果がここに表示されます…</div>';
-    return;
-  }
-
-  const terms = getSelectedTerms();
-  view.innerHTML = units
-    .map((u) => {
-      const active = u.id === activeUnitId ? " align-hl" : "";
-      const ranges = buildHighlightRanges(u.tgt || "", terms);
-      const inner = applyRangesToHtml(u.tgt || "", ranges);
-      return `<div class="mt-unit${active}" data-unit-id="${escapeHtml(u.id)}" role="button" tabindex="0">${inner || "&nbsp;"}</div>`;
-    })
-    .join("");
-
-  view.querySelectorAll(".mt-unit").forEach((node) => {
+function bindUnitClicks(root) {
+  root.querySelectorAll(".mt-unit").forEach((node) => {
     node.addEventListener("click", () => onUnitClick(node.dataset.unitId));
     node.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -368,6 +351,43 @@ function renderTargetUnits(units) {
   });
 }
 
+function renderUnitBlocks(view, units, field) {
+  if (!view) return;
+  if (!units?.length) {
+    view.innerHTML =
+      field === "tgt"
+        ? '<div class="target-empty">翻訳結果がここに表示されます…</div>'
+        : "";
+    return;
+  }
+  const terms = getSelectedTerms();
+  view.innerHTML = units
+    .map((u) => {
+      const text = u[field] || "";
+      const active = u.id === activeUnitId ? " align-hl" : "";
+      const ranges = buildHighlightRanges(text, terms);
+      const inner = applyRangesToHtml(text, ranges);
+      return `<div class="mt-unit${active}" data-unit-id="${escapeHtml(u.id)}" role="button" tabindex="0">${inner || "&nbsp;"}</div>`;
+    })
+    .join("");
+  bindUnitClicks(view);
+}
+
+function renderTargetUnits(units) {
+  renderUnitBlocks(document.getElementById("targetView"), units, "tgt");
+}
+
+function renderSourceUnits(units) {
+  renderUnitBlocks(document.getElementById("sourceAlignView"), units, "src");
+}
+
+function scrollActiveUnitsIntoView() {
+  if (!activeUnitId) return;
+  document.querySelectorAll(".mt-unit.align-hl").forEach((node) => {
+    node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+}
+
 function onUnitClick(unitId) {
   if (activeUnitId === unitId) {
     activeUnitId = null;
@@ -375,7 +395,12 @@ function onUnitClick(unitId) {
     activeUnitId = unitId;
   }
   renderTargetUnits(alignmentUnits);
-  refreshSourceDisplay();
+  if (sourceAlignMode) {
+    renderSourceUnits(alignmentUnits);
+  } else {
+    refreshSourceDisplay();
+  }
+  scrollActiveUnitsIntoView();
 }
 
 function refreshAllHighlights() {
@@ -393,34 +418,40 @@ async function initApp() {
     document.execCommand("insertText", false, text);
   });
 
+  showProgress("起動中…", 0, 0, "モデルを確認しています");
   const res = await apiCall("get_model_status");
   if (res.ok) {
     modelStatus = res;
     populateMtModelSelect();
     updateModelBar();
-    status("準備完了");
 
     const sel = document.getElementById("mtModelSelect");
     const preferred = sel?.value || modelStatus.selected_mt_id;
     if (preferred && preferred !== modelStatus.selected_mt_id) {
+      showProgress("モデル切替中…", 0, 0, preferred);
       await onMtModelChange();
+      hideProgress();
       return;
     }
 
     if (res.mt_available && !res.mt_loaded) {
-      apiCall("warmup_mt", preferred).then((warm) => {
-        if (warm.ok) {
-          modelStatus.mt_loaded = true;
-          modelStatus.selected_mt_id = warm.selected_mt_id || preferred;
-          status(warm.cached ? "翻訳モデル準備完了" : "翻訳モデル起動完了");
-        } else if (warm.error) {
-          status(warm.error);
-        }
-      });
+      showProgress("モデル読み込み中…", 0, 0, "翻訳エンジンを起動しています（初回のみ時間がかかります）");
+      status("翻訳モデルを起動中…");
+      const warm = await apiCall("warmup_mt", preferred);
+      if (warm.ok) {
+        modelStatus.mt_loaded = true;
+        modelStatus.selected_mt_id = warm.selected_mt_id || preferred;
+        status(warm.cached ? "翻訳モデル準備完了" : "翻訳モデル起動完了");
+      } else if (warm.error) {
+        status(warm.error);
+      }
+    } else {
+      status("準備完了");
     }
   } else {
     status(res.error || "モデル状態の取得に失敗");
   }
+  hideProgress();
 }
 
 function updateCount() {
@@ -432,6 +463,7 @@ function updateCount() {
 
 async function onSourceInput() {
   updateCount();
+  if (sourceAlignMode) exitSourceAlignMode();
   alignmentUnits = [];
   activeUnitId = null;
   clearTimeout(sourceHighlightDebounce);
@@ -459,9 +491,9 @@ async function attachFile() {
     status("キャンセルしました");
     return;
   }
-  setSourceText(res.text || "");
   alignmentUnits = [];
   activeUnitId = null;
+  setSourceText(res.text || "");
   renderTargetUnits([]);
   updateCount();
   if (res.display) {
@@ -473,9 +505,9 @@ async function attachFile() {
 }
 
 function clearAll() {
-  setSourceText("");
   alignmentUnits = [];
   activeUnitId = null;
+  setSourceText("");
   allKeywords = [];
   selectedKeywordKeys.clear();
   renderTargetUnits([]);
@@ -600,10 +632,12 @@ async function translateText() {
   }
   alignmentUnits = res.units || [];
   activeUnitId = null;
-  computeUnitOffsets(src, alignmentUnits);
+  // 本文を編集面に残したまま、unit ビューで src/tgt を ID 連動させる
+  sourcePlainBackup = getSourceEl().innerText || src;
+  enterSourceAlignMode(alignmentUnits);
   renderTargetUnits(alignmentUnits);
-  refreshSourceDisplay();
-  status("翻訳完了");
+  updateCount();
+  status("翻訳完了（クリックで本文⇔翻訳を対応表示）");
 }
 
 function swapLang() {
@@ -621,6 +655,9 @@ initUiPrefs();
 window.addEventListener("pywebviewready", initApp);
 if (hasApi()) {
   initApp();
+} else {
+  status("バックエンド未接続（プレビュー）");
+  hideProgress();
 }
 
 window.status = status;

@@ -58,6 +58,13 @@
           spellcheck="false"
           data-placeholder="ここにテキストを貼り付け、または「PDF / テキスト添付」から読み込みます…"
         ></div>
+        <!-- 翻訳後: unit 単位で本文側もクリック連動ハイライトする -->
+        <div
+          id="sourceAlignView"
+          class="text-surface source-surface align-units-view"
+          hidden
+          aria-label="本文（対応ハイライト）"
+        ></div>
       </div>
       <div class="panel-foot source-foot">
         <button class="btn ghost" id="btnAttach" type="button" onclick="attachFile()">PDF / テキスト添付</button>
@@ -141,13 +148,13 @@
     <span id="statusMsg">準備中…</span>
   </div>
 
-  <div class="progress-overlay" id="progressOverlay" style="display:none" aria-live="polite">
+  <div class="progress-overlay" id="progressOverlay" style="display:flex" aria-live="polite">
     <div class="progress-box">
-      <div class="progress-label" id="progressLabel">処理中…</div>
+      <div class="progress-label" id="progressLabel">起動中…</div>
       <div class="progress-track" id="progressTrack">
-        <div class="progress-bar" id="progressBar"></div>
+        <div class="progress-bar indeterminate" id="progressBar" style="width:35%"></div>
       </div>
-      <div class="progress-detail" id="progressDetail"></div>
+      <div class="progress-detail" id="progressDetail">UI を準備しています</div>
     </div>
   </div>
 

@@ -35,7 +35,7 @@ ProgressCallback = Callable[[int, int, str], None]
 # CT2 はバッチ推論の方が逐次より大幅に速い
 TRANSLATE_BATCH_SIZE = 16
 MAX_PARAGRAPH_CHARS = 1000
-MAX_SENTENCE_CHARS = 500
+MAX_SENTENCE_CHARS = 900
 # 段落丸ごと翻訳は長文で出力が途中打ち切りになるため、常に文単位を優先
 MAX_WHOLE_PARAGRAPH_CHARS = 0
 
@@ -47,21 +47,64 @@ _ORPHAN_MARKER_RE = re.compile(r"^\(\d+\)$")
 _TOEFL_MARKER_RE = re.compile(r"^\[\s*\]$|^\[X\]$", re.IGNORECASE)
 _TOEFL_PARA_ONLY_RE = re.compile(r"^\(\d{1,2}\)$")
 _PARA_NUM_START_RE = re.compile(r"^\(\d+\)")
+# 1260H 引用: Section 1260H(g)(2)(B)(i)(I) および "and (g)(3)(B)(iv)" 継続
 _LEGAL_CITE_INLINE_RE = re.compile(
-    r"(?:Sections?\s+)?1260H(?:\([^)]*\))+|10\s+U\.S\.C\.\s*§\s*[^,\n;]+|Public Law \d+-\d+",
+    r"(?:Sections?\s+)?1260H(?:\([^)]*\))+(?:\s+and\s+(?:\([^)]*\))+)*"
+    r"|10\s+U\.S\.C\.\s*§\s*[^,\n;]+"
+    r"|Public Law \d+-\d+",
     re.IGNORECASE,
 )
 _ENTITY_SUFFIX_RE = re.compile(
     r"\b(Inc\.|Ltd\.|Limited|Corporation|Corp\.|LLC|PLC|Co\.|Group)\b",
     re.IGNORECASE,
 )
+# URL / TOEFL マーカーのみセグメント分割。法令引用は文内シールドで保護する
 _LITERAL_SPLIT_RE = re.compile(
     r"(https?://[^\s\]\)<>]+|(?:www\d*\.)[^\s\]\)<>]+|\[\s*\]|\[X\]|\[END\]|-{5,}|"
-    r"\b\d{1,2}/\d{1,2}\b|"
-    r"10\s+U\.S\.C\.\s*§\s*[^,\n;]+|Public Law \d+-\d+|"
-    r"(?:Sections?\s+)?1260H(?:\([^)]*\))+)",
+    r"\b\d{1,2}/\d{1,2}\b)",
     re.IGNORECASE,
 )
+# EN→JA 法令文書向け用語（翻訳前に英語側を明確化）
+_REGULATORY_GLOSS_EN: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bChinese military companies\b", re.I), "Chinese military enterprises"),
+    (re.compile(r"\bChinese military company\b", re.I), "Chinese military enterprise"),
+    (re.compile(r"\bmilitary[-\s]civil fusion\b", re.I), "MCF military-civil fusion"),
+    (re.compile(r"\bDeputy Secretary of Defense\b"), "US Deputy Defense Secretary"),
+    (
+        re.compile(r"\bMinistry of State Security\b(?!\s*\(MSS\))"),
+        "China Ministry of State Security (MSS)",
+    ),
+    (
+        re.compile(r"\bMinistry of Industry and Information Technology\b(?!\s*\(MIIT\))"),
+        "China Ministry of Industry and Information Technology (MIIT)",
+    ),
+    (
+        re.compile(r"\bNational Defense Authorization Act\b"),
+        "National Defense Authorization Act (NDAA)",
+    ),
+    (re.compile(r"\bdefense industrial base\b", re.I), "defense industry base"),
+    (re.compile(r"\bLittle Giant\b"), "Little Giant designated SME"),
+]
+# 出力側の既知誤訳を後処理で矯正
+_JA_POST_FIXES: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"中国軍人(?:会社|企業)"), "中国軍事企業"),
+    (re.compile(r"中国軍企社"), "中国軍事企業"),
+    (re.compile(r"軍事民間(?:の)?融合"), "軍民融合"),
+    (re.compile(r"MCF\s*軍民融合"), "軍民融合"),
+    (re.compile(r"副国防総理"), "国防副長官"),
+    (re.compile(r"国家安全保障省"), "国家安全部"),
+    (re.compile(r"産業情報技術省"), "工業情報化部"),
+    (re.compile(r"国防許可法"), "国防授権法"),
+    (re.compile(r"関連事項について"), ""),
+    (re.compile(r"オートル・テクノロジー"), "Autel Technology"),
+    (re.compile(r"オートルロボティクス|オートルロボット工学"), "Autel Robotics"),
+    (re.compile(r"小さな巨人指定中小企業"), "Little Giant"),
+    (re.compile(r"\)\s*について。"), ")。"),
+    (re.compile(r"\(。"), "（"),
+    (re.compile(r"。\s*。"), "。"),
+    (re.compile(r"\.\s*。"), "。"),
+    (re.compile(r"\(Autel Technology\)\s*は"), "は"),
+]
 _COUAGR_RE = re.compile(r"\b[Cc]ougars?\b")
 _PUMA_RE = re.compile(r"\b[Pp]umas?\b")
 _MOOSE_RE = re.compile(r"\bmoose\b", re.IGNORECASE)
@@ -92,6 +135,7 @@ def collapse_soft_linebreaks(text: str) -> str:
     for line in lines[1:]:
         if not line:
             out.append(buf)
+            out.append("")  # 空行＝段落区切りを保持
             buf = ""
             continue
         if not buf:
@@ -99,6 +143,20 @@ def collapse_soft_linebreaks(text: str) -> str:
             continue
         if _looks_like_url_continuation(buf, line):
             buf = f"{buf}{line}"
+        elif re.search(r"(?i)sections?\s*$", buf) and re.match(r"(?i)1260H", line):
+            buf = f"{buf} {line}"
+        elif re.search(r"(?i)1260H\s*$", buf) and line.startswith("("):
+            buf = f"{buf}{line}"
+        elif re.search(r"\([A-Za-z0-9]+\)$", buf) and re.match(r"^\([A-Za-z0-9]+\)", line):
+            # 1260H(g)\n(2)(B) のような引用途中改行
+            buf = f"{buf}{line}"
+        elif re.search(r"\b[A-Z]\.\s*$", buf) and re.match(r"^\([A-Za-z]", line):
+            # William M.\n(Mac)
+            buf = f"{buf} {line}"
+        elif is_entity_name_line(buf.strip()) and is_entity_name_line(line.strip()):
+            # 企業名ロスターは行を結合しない
+            out.append(buf)
+            buf = line
         elif buf.endswith("-") and re.match(r"[A-Za-z]", line):
             buf = f"{buf[:-1]}{line}"
         elif (
@@ -117,6 +175,9 @@ def collapse_soft_linebreaks(text: str) -> str:
             buf = line
     if buf != "" or (lines and lines[-1] == ""):
         out.append(buf)
+    # 末尾の余剰空行を1つに正規化
+    while len(out) > 1 and out[-1] == "" and out[-2] == "":
+        out.pop()
     return "\n".join(out)
 
 
@@ -128,6 +189,50 @@ def collapse_pdf_spacing(text: str) -> str:
     text = _CJK_SPACED_RE.sub(lambda m: m.group(0).replace(" ", ""), text)
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r" *\n *", "\n", text)
+    return text
+
+
+def collapse_legal_citation_breaks(text: str) -> str:
+    """Join PDF wraps inside Section 1260H(...) citations after soft-linebreak pass."""
+    text = re.sub(r"(?i)(sections?)\s*\n\s*(1260H)", r"\1 \2", text)
+    text = re.sub(r"(?i)(1260H)\s*\n\s*(\()", r"\1\2", text)
+    text = re.sub(r"(\([A-Za-z0-9]+\))\s*\n\s*(\([A-Za-z0-9]+\))", r"\1\2", text)
+    text = re.sub(r"\b([A-Z])\.\s*\n\s*(\([A-Za-z])", r"\1. \2", text)
+    return text
+
+
+def apply_regulatory_gloss_en(text: str) -> str:
+    """Rewrite EN phrases that NLLB systematically mistranslates in 1260H docs."""
+    for pattern, repl in _REGULATORY_GLOSS_EN:
+        text = pattern.sub(repl, text)
+    return text
+
+
+def apply_ja_post_fixes(text: str) -> str:
+    """Correct known JA mistranslations after decoding."""
+    for pattern, repl in _JA_POST_FIXES:
+        text = pattern.sub(repl, text)
+    return text
+
+
+def shield_legal_cites(text: str) -> tuple[str, list[str]]:
+    """Replace legal citations with ASCII placeholders for MT, return (text, cites)."""
+    cites: list[str] = []
+
+    def _shield(match: re.Match[str]) -> str:
+        cites.append(match.group(0))
+        return f"ZZREF{len(cites) - 1}ZZ"
+
+    return _LEGAL_CITE_INLINE_RE.sub(_shield, text), cites
+
+
+def restore_legal_cites(text: str, cites: list[str]) -> str:
+    """Restore placeholders produced by ``shield_legal_cites``."""
+    for idx, cite in enumerate(cites):
+        token = f"ZZREF{idx}ZZ"
+        text = text.replace(token, cite)
+        # MT が Z/空白を欠落・挿入する場合の保険
+        text = re.sub(rf"(?i)z{{1,3}}\s*ref\s*{idx}\s*z{{1,3}}", cite, text)
     return text
 
 
@@ -160,6 +265,9 @@ def is_entity_name_line(line: str) -> bool:
     """Latin-only entity / subsidiary lines should not be machine-translated."""
     stripped = line.strip()
     if not stripped or stripped.startswith("•") or stripped.startswith("*"):
+        return False
+    # 文が2つ以上ある行は企業名ではない
+    if re.search(r"\.\s+[A-Z]", stripped):
         return False
     lower = stripped.lower()
     if any(
@@ -258,6 +366,8 @@ def normalize_source_for_mt(text: str, src: str, tgt: str) -> str:
         text = _PUMA_RE.sub(_cougar_repl, text)
         text = _MOOSE_RE.sub("North American moose", text)
         if is_regulatory_list_text(text):
+            text = collapse_legal_citation_breaks(text)
+            text = apply_regulatory_gloss_en(text)
             return text
         text = format_toefl_paragraph_markers(text)
         text = re.sub(r"\bparagraph\s+(\d{1,2})\b", r"item \1", text, flags=re.IGNORECASE)
@@ -325,12 +435,22 @@ def split_sentences(paragraph: str) -> list[str]:
         return f"⟦C{len(cite_hits) - 1}⟧"
 
     shielded = _LEGAL_CITE_INLINE_RE.sub(_shield, shielded)
+    # William M. (Mac) のようなミドルイニシャルで文分割しない
+    shielded = re.sub(r"\b([A-Z])\.\s+(?=\()", r"\1⟦DOT⟧ ", shielded)
+    # Inc. / Ltd. / U.S. 等の略語ピリオドで文分割しない
+    shielded = re.sub(
+        r"\b(Inc|Ltd|Corp|Co|LLC|PLC|Mr|Mrs|Ms|Dr|Jr|Sr|U\.S|Pub)\.",
+        lambda m: m.group(0).replace(".", "⟦DOT⟧"),
+        shielded,
+        flags=re.IGNORECASE,
+    )
     parts = re.split(r"(?<=[。．！？!?\.])\s*", shielded)
     sentences: list[str] = []
     for part in parts:
         p = part.strip()
         if not p:
             continue
+        p = p.replace("⟦DOT⟧", ".")
         for idx, cite in enumerate(cite_hits):
             p = p.replace(f"⟦C{idx}⟧", cite)
         sentences.append(p)
@@ -354,6 +474,9 @@ def chunk_paragraph(paragraph: str) -> list[str]:
         MAX_WHOLE_PARAGRAPH_CHARS > 0
         and len(paragraph) <= MAX_WHOLE_PARAGRAPH_CHARS
     ):
+        return [paragraph]
+    # 企業名1行はそのまま（Inc. ピリオドで割らない）
+    if "\n" not in paragraph and is_entity_name_line(paragraph):
         return [paragraph]
 
     lines = [line.strip() for line in paragraph.split("\n") if line.strip()]
@@ -581,10 +704,19 @@ class MtEngine:
             nonlocal batch_indices, batch_sentences
             if not batch_sentences:
                 return
-            pieces = self._translate_batch(batch_sentences, src_code, tgt_code)
-            for unit_idx, piece in zip(batch_indices, pieces):
+            shielded_batch: list[str] = []
+            cite_lists: list[list[str]] = []
+            for sentence in batch_sentences:
+                shielded, cites = shield_legal_cites(sentence)
+                shielded_batch.append(shielded)
+                cite_lists.append(cites)
+            pieces = self._translate_batch(shielded_batch, src_code, tgt_code)
+            for unit_idx, piece, cites in zip(batch_indices, pieces, cite_lists):
                 para_idx, original = units[unit_idx]
                 tgt_piece = piece if piece else original
+                tgt_piece = restore_legal_cites(tgt_piece, cites)
+                if tgt_code == "jpn_Jpan":
+                    tgt_piece = apply_ja_post_fixes(tgt_piece)
                 translated_by_para[para_idx].append(tgt_piece)
                 pairs.append((original, tgt_piece))
                 progress["done"] += 1
