@@ -21,9 +21,23 @@ class Api:
     def __init__(self, model_manager: ModelManager | None = None) -> None:
         self._manager = model_manager or ModelManager()
         self._window: Any = None
+        self._shutdown_done = False
 
     def set_window(self, window: Any) -> None:
         self._window = window
+
+    def shutdown(self) -> dict[str, Any]:
+        """Release loaded models. Safe to call multiple times on exit."""
+        if self._shutdown_done:
+            return self._ok(shutdown=True, already=True)
+        try:
+            self._manager.unload_all()
+            self._shutdown_done = True
+            logger.info("API shutdown: models unloaded")
+            return self._ok(shutdown=True)
+        except Exception as exc:
+            logger.exception("shutdown failed")
+            return self._err(str(exc))
 
     def _ok(self, **payload: Any) -> dict[str, Any]:
         return {"ok": True, **payload}

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
+import signal
 import sys
 from pathlib import Path
 
@@ -10,6 +12,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+logger = logging.getLogger(__name__)
 
 
 def _app_root() -> Path:
@@ -53,14 +56,27 @@ def main() -> None:
     # webview だけ先に入れてウィンドウを作る（torch/CT2 は warmup 時まで遅延）
     import webview
 
+    from backend.api import Api
     from backend.runtime_config import apply_cpu_thread_env
 
     threads = apply_cpu_thread_env()
-    logging.getLogger(__name__).info("CPU inference threads capped at %s", threads)
-
-    from backend.api import Api
+    logger.info("CPU inference threads capped at %s", threads)
 
     api = Api()
+    cleaned = {"done": False}
+
+    def shutdown_once() -> None:
+        """ウィンドウ閉鎖・シグナル・プロセス終了でモデルを解放する（多重呼び出し可）。"""
+        if cleaned["done"]:
+            return
+        cleaned["done"] = True
+        try:
+            api.shutdown()
+        except Exception:
+            logger.exception("shutdown_once failed")
+
+    atexit.register(shutdown_once)
+
     window = webview.create_window(
         title="AI-TextAnalyze",
         url=str(INDEX_HTML),
@@ -70,11 +86,38 @@ def main() -> None:
         min_size=(1024, 640),
     )
     api.set_window(window)
+
+    # 閉じる直前／直後に解放（closing はキャンセル可能なので False を返さない）
+    window.events.closing += shutdown_once
+    window.events.closed += shutdown_once
+
+    def _on_signal(signum: int, _frame: object) -> None:
+        logger.info("signal %s received — shutting down", signum)
+        shutdown_once()
+        try:
+            window.destroy()
+        except Exception:
+            logger.debug("window.destroy failed after signal", exc_info=True)
+        raise SystemExit(0)
+
+    for sig in (getattr(signal, "SIGINT", None), getattr(signal, "SIGTERM", None)):
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _on_signal)
+        except (ValueError, OSError):
+            # 非メインスレッド等では設定できない環境がある
+            pass
+
     icon = _window_icon()
-    if icon:
-        webview.start(debug=False, icon=icon)
-    else:
-        webview.start(debug=False)
+    try:
+        if icon:
+            webview.start(debug=False, icon=icon)
+        else:
+            webview.start(debug=False)
+    finally:
+        # start() 復帰時も必ず解放してプロセスを終了側へ戻す
+        shutdown_once()
 
 
 if __name__ == "__main__":

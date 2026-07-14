@@ -52,3 +52,12 @@ def test_set_window() -> None:
     api.set_window(win)
     api._set_status("test")
     win.evaluate_js.assert_called_once()
+
+
+def test_shutdown_unloads_once(tmp_path: Path) -> None:
+    mgr = ModelManager(tmp_path)
+    mgr.unload_all = MagicMock()  # type: ignore[method-assign]
+    api = Api(mgr)
+    assert api.shutdown()["ok"] is True
+    assert api.shutdown().get("already") is True
+    mgr.unload_all.assert_called_once()
