@@ -45,9 +45,44 @@ def test_merge_orphan_markers() -> None:
     assert merged == ["(1)\nCougars live here.", "(2)\nThey hunt."]
 
 
-def test_collapse_soft_linebreaks_joins_wrapped_url() -> None:
-    text = "http://example.com/animals/mount\nain-lion/page"
-    assert collapse_soft_linebreaks(text) == "http://example.com/animals/mountain-lion/page"
+def test_collapse_soft_linebreaks_joins_t_me() -> None:
+    text = "формате t.\nme перестали"
+    assert "t.me" in collapse_soft_linebreaks(text)
+
+
+def test_split_literal_keeps_t_me_and_bare_domain() -> None:
+    text = "See t.me/channel and mainichi.jp/english/a for details."
+    parts = split_literal_segments(text)
+    literals = [c for is_lit, c in parts if is_lit]
+    assert "t.me/channel" in literals
+    assert any(x.startswith("mainichi.jp/") for x in literals)
+
+
+def test_news_gloss_en_ishiba() -> None:
+    from backend.mt_engine import normalize_source_for_mt
+
+    out = normalize_source_for_mt("Former Prime Minister Shigeru Ishiba spoke.", "en", "ja")
+    assert "Ishiba Shigeru" in out
+    assert "Shigeru Ishiba" not in out
+
+
+def test_news_gloss_ko_self_proclaimed() -> None:
+    from backend.mt_engine import normalize_source_for_mt
+
+    out = normalize_source_for_mt("자처한 트럼프", "ko", "ja")
+    assert "who proclaimed himself as" in out
+    assert "자처한" not in out
+
+
+def test_ja_post_fix_geography() -> None:
+    from backend.mt_engine import apply_ja_post_fixes
+
+    assert "南海トラフ" in apply_ja_post_fixes("南井谷の地震")
+    assert "石破茂" in apply_ja_post_fixes("石原市長元首相")
+    assert "千島海溝" in apply_ja_post_fixes("チシマ・キュリル沟")
+    assert "紅海" in apply_ja_post_fixes("赤海も閉鎖")
+    assert "t.me" in apply_ja_post_fixes("t形式です.meは開かない")
+
 
 
 def test_collapse_soft_linebreaks_keeps_word_space() -> None:

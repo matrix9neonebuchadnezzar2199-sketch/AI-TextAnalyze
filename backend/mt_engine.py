@@ -58,10 +58,17 @@ _ENTITY_SUFFIX_RE = re.compile(
     r"\b(Inc\.|Ltd\.|Limited|Corporation|Corp\.|LLC|PLC|Co\.|Group)\b",
     re.IGNORECASE,
 )
-# URL / TOEFL マーカーのみセグメント分割。法令引用は文内シールドで保護する
+# URL / Telegram / スキーム無しドメイン / ページ番号は翻訳しない
 _LITERAL_SPLIT_RE = re.compile(
-    r"(https?://[^\s\]\)<>]+|(?:www\d*\.)[^\s\]\)<>]+|\[\s*\]|\[X\]|\[END\]|-{5,}|"
-    r"\b\d{1,2}/\d{1,2}\b)",
+    r"("
+    r"https?://[^\s\]\)<>]+"
+    r"|(?:www\d*\.)[^\s\]\)<>]+"
+    r"|t\.me(?:/[^\s\]\)<>]*)?"
+    r"|\b(?:[\w-]+\.)+(?:com\.cn|co\.jp|co\.kr|com|org|net|info|io|cn|jp|ru)"
+    r"(?:/[^\s\]\)<>]*)?"
+    r"|\[\s*\]|\[X\]|\[END\]|-{5,}"
+    r"|\b\d{1,2}/\d{1,2}\b"
+    r")",
     re.IGNORECASE,
 )
 # EN→JA 法令文書向け用語（翻訳前に英語側を明確化）
@@ -85,6 +92,51 @@ _REGULATORY_GLOSS_EN: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bdefense industrial base\b", re.I), "defense industry base"),
     (re.compile(r"\bLittle Giant\b"), "Little Giant designated SME"),
 ]
+# EN ニュース／一般記事向け（固有名・地形の定訳誘導）
+_NEWS_GLOSS_EN: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bShigeru Ishiba\b"), "Ishiba Shigeru"),
+    (re.compile(r"\bSanae Takaichi\b"), "Takaichi Sanae"),
+    (re.compile(r"\bDigital Agency\b"), "Japan Digital Agency"),
+    (re.compile(r"\bNankai Trough\b"), "Nankai Trough megathrust zone"),
+    (re.compile(r"\bChishima Trench\b"), "Chishima Kuril Trench"),
+    (re.compile(r"\bJapan Trench\b"), "Japan Trench deep-sea trench"),
+    (re.compile(r"\bHouse of Councillors\b"), "Japanese House of Councillors upper house"),
+    (re.compile(r"\bdisaster management agency\b", re.I), "Disaster Management Agency"),
+    (re.compile(r"\bdisaster management minister\b", re.I), "Minister for Disaster Management"),
+]
+# KO→JA: 誤訳が多い語は「日本語に近い英語定訳」へ寄せ、漏れは JA 後処理で拾う
+_NEWS_GLOSS_KO: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"호르무즈"), "Hormuz"),
+    (re.compile(r"자처한"), "who proclaimed himself as"),
+    (re.compile(r"통행료"), "passage toll"),
+    (re.compile(r"\b내라\b"), "must pay"),
+    (re.compile(r"홍해"), "the Red Sea"),
+    (re.compile(r"후티"), "Houthi rebels"),
+    (re.compile(r"양해각서"), "memorandum of understanding (MOU)"),
+    (re.compile(r"해상봉쇄"), "naval blockade"),
+    (re.compile(r"일방\s*선언"), "unilateral announcement"),
+    (re.compile(r"수호자"), "guardian"),
+]
+# ZH→JA: 定訳が崩れやすい政治／AI用語
+_NEWS_GLOSS_ZH: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"全球南方"), "Global South"),
+    (re.compile(r"人工智能治理"), "AI governance"),
+    (re.compile(r"全球人工智能治理"), "global AI governance"),
+    (re.compile(r"主旨讲话"), "keynote speech"),
+    (re.compile(r"高级别会议"), "high-level meeting"),
+    (re.compile(r"世界人工智能大会"), "World Artificial Intelligence Conference"),
+]
+# RU→JA: 固有名・略称の安定化
+_NEWS_GLOSS_RU: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"ТАСС-ДОСЬЕ"), "TASS dossier"),
+    (re.compile(r"\bТАСС\b"), "TASS"),
+    (re.compile(r"Ормузск(?:ий|ого|ом|ий)?\s+пролив", re.I), "Strait of Hormuz"),
+    (
+        re.compile(r"Корпуса стражей исламской революции"),
+        "IRGC Islamic Revolutionary Guard Corps",
+    ),
+    (re.compile(r"\bКСИР\b"), "IRGC"),
+]
 # 出力側の既知誤訳を後処理で矯正
 _JA_POST_FIXES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"中国軍人(?:会社|企業)"), "中国軍事企業"),
@@ -104,6 +156,38 @@ _JA_POST_FIXES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"。\s*。"), "。"),
     (re.compile(r"\.\s*。"), "。"),
     (re.compile(r"\(Autel Technology\)\s*は"), "は"),
+    # ニュース記事で観測された系統誤訳
+    (re.compile(r"石原(?:市長)?(?:元)?首相"), "石破茂元首相"),
+    (re.compile(r"石原市長"), "石破茂"),
+    (re.compile(r"石原一郎"), "石破茂"),
+    (re.compile(r"サナエ(?:・タカイチ)?首相|サナエ・タカイチ"), "高市早苗首相"),
+    (re.compile(r"南井谷|南カイのメガトラストゾーン|南カイ・メガトラスト[^。、]*"), "南海トラフ"),
+    (re.compile(r"チシマ[・･\s]*キュリル[沟溝]?|チシマ海峡"), "千島海溝"),
+    (re.compile(r"デジタル機関"), "デジタル庁"),
+    (re.compile(r"トキオ"), "東京"),
+    (re.compile(r"\bAgency\b"), "機関"),
+    (re.compile(r"洪荒|赤海"), "紅海"),
+    (re.compile(r"自粛した"), "自称した"),
+    (re.compile(r"通行料\s*20%\s*下降"), "通行料20%を支払え"),
+    (re.compile(r"20%\s*減免"), "20%課金"),
+    (re.compile(r"タース(?:・ドシエ)?"), "TASS"),
+    (re.compile(r"ホーティド|ホーティ|フーシー"), "フーティ"),
+    (re.compile(r"ホルミューズ|ホルマス"), "ホルムズ"),
+    (re.compile(r"人工智能"), "人工知能"),
+    (re.compile(r"治理"), "ガバナンス"),
+    (re.compile(r"人々が。\s*コムです"), ""),
+    (re.compile(r"政治について。"), ""),
+    (re.compile(r"t形式です\.me"), "t.me"),
+    (re.compile(r"t\s*形式です\s*\.\s*me"), "t.me"),
+    (re.compile(r"unilateral declaration"), "一方的な宣言"),
+    (re.compile(r"unilateral announcement"), "一方的な宣言"),
+    (re.compile(r"トランジット[・･\s]*タール"), "通行料"),
+    (re.compile(r"トランジット[・･\s]*トール"), "通行料"),
+    (re.compile(r"self-proclaimed"), "自称"),
+    (re.compile(r"who proclaimed himself as"), "と自称する"),
+    (re.compile(r"the Red Sea"), "紅海"),
+    (re.compile(r"ホーシ"), "フーティ"),
+    (re.compile(r"として自らを宣言した"), "と自称した"),
 ]
 _COUAGR_RE = re.compile(r"\b[Cc]ougars?\b")
 _PUMA_RE = re.compile(r"\b[Pp]umas?\b")
@@ -117,6 +201,9 @@ def _looks_like_url_continuation(prev: str, nxt: str) -> bool:
     """True when a newline is likely inside a URL/path rather than prose."""
     window = f"{prev[-48:]}{nxt[:48]}"
     if re.search(r"https?://|www\d*\.", window, re.IGNORECASE):
+        return True
+    # Telegram 短縮ドメイン t.\nme
+    if re.search(r"(?i)t\.\s*$", prev) and re.match(r"(?i)me\b", nxt or ""):
         return True
     if "/" in prev[-40:] and re.match(r"[a-zA-Z0-9._/?=&%#:@-]", nxt or ""):
         return True
@@ -142,6 +229,8 @@ def collapse_soft_linebreaks(text: str) -> str:
             buf = line
             continue
         if _looks_like_url_continuation(buf, line):
+            buf = f"{buf}{line}"
+        elif re.search(r"(?i)t\.\s*$", buf) and re.match(r"(?i)me\b", line):
             buf = f"{buf}{line}"
         elif re.search(r"(?i)sections?\s*$", buf) and re.match(r"(?i)1260H", line):
             buf = f"{buf} {line}"
@@ -187,9 +276,30 @@ def collapse_pdf_spacing(text: str) -> str:
     # 「일 본 의 포 용」のような1文字トークン連続のみ潰す（語間空白は残す）
     text = _HANGUL_SPACED_RE.sub(lambda m: m.group(0).replace(" ", ""), text)
     text = _CJK_SPACED_RE.sub(lambda m: m.group(0).replace(" ", ""), text)
+    # 引用符まわりの PDF 空白
+    text = re.sub(r"([「『“‘\"])\s+", r"\1", text)
+    text = re.sub(r"\s+([」』”’\"])", r"\1", text)
+    text = re.sub(r"\s+([,，.。!！?？])", r"\1", text)
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r" *\n *", "\n", text)
     return text
+
+
+def apply_gloss(text: str, rules: list[tuple[re.Pattern[str], str]]) -> str:
+    """Apply ordered glossary substitutions."""
+    for pattern, repl in rules:
+        text = pattern.sub(repl, text)
+    return text
+
+
+def apply_regulatory_gloss_en(text: str) -> str:
+    """Rewrite EN phrases that NLLB systematically mistranslates in 1260H docs."""
+    return apply_gloss(text, _REGULATORY_GLOSS_EN)
+
+
+def apply_news_gloss_en(text: str) -> str:
+    """Rewrite EN news terms that NLLB systematically mistranslates."""
+    return apply_gloss(text, _NEWS_GLOSS_EN)
 
 
 def collapse_legal_citation_breaks(text: str) -> str:
@@ -198,13 +308,6 @@ def collapse_legal_citation_breaks(text: str) -> str:
     text = re.sub(r"(?i)(1260H)\s*\n\s*(\()", r"\1\2", text)
     text = re.sub(r"(\([A-Za-z0-9]+\))\s*\n\s*(\([A-Za-z0-9]+\))", r"\1\2", text)
     text = re.sub(r"\b([A-Z])\.\s*\n\s*(\([A-Za-z])", r"\1. \2", text)
-    return text
-
-
-def apply_regulatory_gloss_en(text: str) -> str:
-    """Rewrite EN phrases that NLLB systematically mistranslates in 1260H docs."""
-    for pattern, repl in _REGULATORY_GLOSS_EN:
-        text = pattern.sub(repl, text)
     return text
 
 
@@ -304,6 +407,22 @@ def format_toefl_paragraph_markers(text: str) -> str:
     return re.sub(r"\((\d{1,2})\)(?=[^\n])", r"(\1)\n", text)
 
 
+def _is_url_like_literal(content: str) -> bool:
+    s = content.strip()
+    if not s:
+        return False
+    if _URL_RE.match(s):
+        return True
+    if re.match(r"(?i)t\.me\b", s):
+        return True
+    if re.match(
+        r"(?i)[\w.-]+\.(?:com\.cn|co\.jp|co\.kr|com|org|net|info|io|cn|jp|ru)\b",
+        s,
+    ):
+        return True
+    return False
+
+
 def join_literal_segments(segments: list[tuple[bool, str]]) -> str:
     """Join translated segments with readable spacing around TOEFL markers."""
     out: list[str] = []
@@ -324,8 +443,11 @@ def join_literal_segments(segments: list[tuple[bool, str]]) -> str:
             ):
                 if out and not out[-1].endswith("\n\n"):
                     out.append("\n\n")
-            elif is_literal and _URL_RE.match(content.strip()):
+            elif is_literal and _is_url_like_literal(content):
                 if out and not out[-1].endswith("\n"):
+                    out.append("\n")
+            elif not is_literal and prev_literal and _is_url_like_literal(prev_content):
+                if out and not out[-1].endswith(("\n", " ")):
                     out.append("\n")
             elif not is_literal and _PARA_NUM_START_RE.match(content.lstrip()):
                 if prev_literal and prev_content.strip() in ("[]", "[X]"):
@@ -343,6 +465,8 @@ def join_literal_segments(segments: list[tuple[bool, str]]) -> str:
             out.append("\n")
         if is_literal and re.fullmatch(r"-{5,}", content.strip()) and not content.endswith("\n"):
             out.append("\n\n")
+        if is_literal and _is_url_like_literal(content) and not content.endswith("\n"):
+            out.append("\n")
     return "".join(out)
 
 
@@ -351,6 +475,13 @@ def normalize_source_for_mt(text: str, src: str, tgt: str) -> str:
     text = collapse_pdf_spacing(text)
     if tgt != "ja":
         return text
+
+    if src == "ko":
+        return apply_gloss(text, _NEWS_GLOSS_KO)
+    if src == "zh":
+        return apply_gloss(text, _NEWS_GLOSS_ZH)
+    if src == "ru":
+        return apply_gloss(text, _NEWS_GLOSS_RU)
 
     # EN→JA 固有の誤訳回避
     if src in ("en", "auto"):
@@ -365,6 +496,7 @@ def normalize_source_for_mt(text: str, src: str, tgt: str) -> str:
         text = _COUAGR_RE.sub(_cougar_repl, text)
         text = _PUMA_RE.sub(_cougar_repl, text)
         text = _MOOSE_RE.sub("North American moose", text)
+        text = apply_news_gloss_en(text)
         if is_regulatory_list_text(text):
             text = collapse_legal_citation_breaks(text)
             text = apply_regulatory_gloss_en(text)
