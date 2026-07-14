@@ -117,6 +117,25 @@ function setTheme(t) {
   localStorage.setItem(THEME_STORAGE_KEY, theme);
 }
 
+/** ヘルプを別ウィンドウで開く（pywebview 優先、ブラウザ時は window.open） */
+async function openHelp() {
+  const theme = document.documentElement.getAttribute("data-theme") || "dark";
+  if (hasApi()) {
+    const r = await apiCall("open_help", theme);
+    if (r && r.ok) return;
+    status(r?.error || "ヘルプを開けませんでした");
+    return;
+  }
+  const w = window.open(
+    `help.html?theme=${encodeURIComponent(theme)}`,
+    "ai-textanalyze-help",
+    "width=920,height=820,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes",
+  );
+  if (!w) {
+    status("ポップアップがブロックされました。許可してから再試行してください。");
+  }
+}
+
 function applySourceCollapsed(collapsed) {
   const workspace = document.getElementById("workspace");
   const btn = document.getElementById("btnToggleSource");

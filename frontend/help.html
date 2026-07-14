@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI-TextAnalyze ヘルプ</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="help.css">
+</head>
+<body class="help-body">
+
+  <header class="help-header">
+    <div class="brand">
+      <div class="logo">TA</div>
+      <div>
+        AI-TextAnalyze ヘルプ
+        <br><small>はじめての方向けガイド</small>
+      </div>
+    </div>
+  </header>
+
+  <main class="help-main">
+
+    <section class="help-section">
+      <h1>このアプリでできること</h1>
+      <p>
+        外国語や日本語の文章を読み込み、<strong>キーワード（人名・国名・都市名・組織名）を抜き出したり</strong>、
+        <strong>別の言語へ翻訳したり</strong>できます。インターネット不要・CPU だけで動きます（モデルは事前配置）。
+      </p>
+    </section>
+
+    <section class="help-section">
+      <h1>操作の流れ（おすすめ動線）</h1>
+      <p class="help-lead">上から順に進めると迷いにくいです。</p>
+
+      <ol class="flow">
+        <li class="flow-step">
+          <div class="flow-num">1</div>
+          <div class="flow-card">
+            <h2>本文を入れる</h2>
+            <p>左パネル「本文 / Source」にテキストを用意します。</p>
+            <ul>
+              <li><strong>PDF / テキストを添付</strong> … ツールバーの添付ボタンからファイルを選ぶ</li>
+              <li><strong>貼り付け</strong> … メモ帳やブラウザからコピーし、本文欄にペースト</li>
+              <li><strong>手入力</strong> … そのまま入力しても OK</li>
+            </ul>
+            <p class="hint">PDF はテキスト抽出できるもの向けです。スキャン画像だけの PDF は文字が取れないことがあります。</p>
+          </div>
+        </li>
+        <li class="flow-arrow" aria-hidden="true">↓</li>
+        <li class="flow-step">
+          <div class="flow-num">2</div>
+          <div class="flow-card">
+            <h2>言語を確認する</h2>
+            <p>翻訳パネルで<strong>元言語 → 訳出言語</strong>を選びます。元言語は自動判定も使えます。</p>
+          </div>
+        </li>
+        <li class="flow-arrow" aria-hidden="true">↓</li>
+        <li class="flow-step">
+          <div class="flow-num">3</div>
+          <div class="flow-card">
+            <h2>やりたい処理を選ぶ</h2>
+            <div class="flow-split">
+              <div>
+                <h3>キーワード抽出</h3>
+                <p>「キーワード抽出」を押すと、本文から人名・国・都市・組織を一覧に出します。</p>
+              </div>
+              <div>
+                <h3>翻訳</h3>
+                <p>「翻訳」を押すと、文ごとに翻訳が進み、進捗バーで状況が分かります。</p>
+              </div>
+            </div>
+            <p class="hint">初回やモデル切替時は、読み込み画面が出ることがあります。完了まで待ってください。</p>
+          </div>
+        </li>
+        <li class="flow-arrow" aria-hidden="true">↓</li>
+        <li class="flow-step">
+          <div class="flow-num">4</div>
+          <div class="flow-card">
+            <h2>結果を確認・コピーする</h2>
+            <ul>
+              <li>翻訳後、本文と訳文の対応ブロックをクリックすると、同じ箇所がハイライトされます</li>
+              <li>各パネル下の<strong>コピー</strong>で、本文／訳文をクリップボードへコピーできます</li>
+              <li>キーワード一覧から、必要な語を確認・再利用できます</li>
+            </ul>
+          </div>
+        </li>
+      </ol>
+
+      <div class="flow-diagram" aria-hidden="true">
+        <span class="chip">PDF / テキスト貼付</span>
+        <span class="arrow">→</span>
+        <span class="chip">本文パネル</span>
+        <span class="arrow">→</span>
+        <span class="chip">言語選択</span>
+        <span class="arrow">→</span>
+        <span class="chip">抽出 or 翻訳</span>
+        <span class="arrow">→</span>
+        <span class="chip">確認・コピー</span>
+      </div>
+    </section>
+
+    <section class="help-section">
+      <h1>画面の見かた（ざっくり）</h1>
+      <ul class="plain-list">
+        <li><strong>左</strong> … 元の文章（Source）</li>
+        <li><strong>右上</strong> … 翻訳の言語・実行、翻訳結果</li>
+        <li><strong>右下付近</strong> … キーワード抽出の結果</li>
+        <li><strong>最上部右</strong> … テーマ（Light / Dark）と、このヘルプ（本マーク）</li>
+      </ul>
+    </section>
+
+    <section class="help-section">
+      <h1>使っているモデルの解説</h1>
+
+      <h2>キーワード抽出（NER）</h2>
+      <table class="help-table">
+        <tbody>
+          <tr><th>名前</th><td>GLiNER multilingual medium（ONNX int8）</td></tr>
+          <tr><th>役割</th><td>文章中の固有表現をラベル付きで検出</td></tr>
+          <tr><th>抽出ラベル</th><td>Person（人名）、Country（国）、City（都市）、Organization（組織）</td></tr>
+          <tr><th>実行方式</th><td>ONNX Runtime・CPU のみ・量子化（int8）で軽量化</td></tr>
+          <tr><th>RAM 目安</th><td>約 0.5〜1.0 GB</td></tr>
+        </tbody>
+      </table>
+      <p>
+        「ラベルを指定して探す」タイプの NER です。ニュース記事・レポートなど、固有名詞が多い文章向きです。
+        誤検出・取りこぼしはあり得ます。重要な案件では目視確認を推奨します。
+      </p>
+
+      <h2>翻訳（MT）</h2>
+      <table class="help-table">
+        <tbody>
+          <tr><th>名前</th><td>NLLB-200 distilled（CTranslate2 int8）</td></tr>
+          <tr><th>役割</th><td>多言語間の機械翻訳（200 言語系ファミリー）</td></tr>
+          <tr><th>切替</th><td>UI で <strong>600M</strong> / <strong>1.3B</strong> を選択</td></tr>
+          <tr><th>実行方式</th><td>CTranslate2・CPU のみ・int8。文単位に分割して逐次翻訳</td></tr>
+          <tr><th>ライセンス</th><td>NLLB は <strong>CC-BY-NC（非商用）</strong>。社内・個人利用前提。商用転用は不可</td></tr>
+        </tbody>
+      </table>
+
+      <table class="help-table compare">
+        <thead>
+          <tr>
+            <th>バリアント</th>
+            <th>向き</th>
+            <th>RAM 目安</th>
+            <th>速度・品質の目安</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>600M</strong>（既定）</td>
+            <td>日常利用・メモリ節約</td>
+            <td>約 1.0〜1.5 GB</td>
+            <td>より軽い。短い記事なら十分なことが多い</td>
+          </tr>
+          <tr>
+            <td><strong>1.3B</strong></td>
+            <td>品質優先・メモリ余裕あり</td>
+            <td>約 2.0〜2.5 GB</td>
+            <td>やや重いが、用語や文脈の安定感が出やすい傾向</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        CPU では 1 文あたり数秒かかることがあります。長い文書ほど時間が増えます。
+        専門用語・略語・固有名は、用語集・後処理で補正している場合がありますが、<strong>機械翻訳の限界</strong>は残ります。
+      </p>
+
+      <h2>メモリと排他ロード</h2>
+      <p>
+        NER と MT は<strong>同時に常駐しません</strong>（どちらかを使うときに切り替えてロード）。
+        そのため、ピーク RAM を抑えやすくなっています。切替のたびに読み込み時間が発生します。
+      </p>
+    </section>
+
+    <section class="help-section">
+      <h1>うまくいかないとき</h1>
+      <ul class="plain-list">
+        <li>モデル未配置 … 起動時や実行時にエラーが出ます。配布物の <code>models/</code>（または <code>model/</code>）を確認してください</li>
+        <li>翻訳が遅い … 正常です。進捗バーを見て待つか、600M を試してください</li>
+        <li>PDF が空 … 画像 PDF の可能性。テキスト PDF にするか、手動で貼り付けてください</li>
+      </ul>
+    </section>
+
+    <footer class="help-footer">
+      <p>作成者：OK</p>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var theme = params.get("theme") || localStorage.getItem("ai-textanalyze-theme") || "dark";
+      document.documentElement.setAttribute("data-theme", theme === "light" ? "light" : "dark");
+    })();
+  </script>
+</body>
+</html>

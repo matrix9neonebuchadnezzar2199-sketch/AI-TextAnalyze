@@ -45,6 +45,7 @@ def _window_icon() -> str | None:
 
 FRONTEND_DIR = _frontend_dir()
 INDEX_HTML = FRONTEND_DIR / "index.html"
+HELP_HTML = FRONTEND_DIR / "help.html"
 
 
 def main() -> None:
@@ -62,7 +63,7 @@ def main() -> None:
     threads = apply_cpu_thread_env()
     logger.info("CPU inference threads capped at %s", threads)
 
-    api = Api()
+    api = Api(help_html=HELP_HTML)
     cleaned = {"done": False}
 
     def shutdown_once() -> None:

@@ -1,0 +1,249 @@
+/* Help window — Document layout (separate from main app shell) */
+
+.help-body {
+  overflow: auto;
+  height: auto;
+  min-height: 100vh;
+  display: block;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.help-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 12px 20px;
+  background: var(--toolbar);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.help-main {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.help-section {
+  margin-bottom: 36px;
+}
+
+.help-section h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+  letter-spacing: 0.02em;
+}
+
+.help-section h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 20px 0 10px;
+  color: var(--text);
+}
+
+.help-section h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.help-section p,
+.help-section li {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.help-lead {
+  color: var(--text-sub);
+  margin-bottom: 16px;
+}
+
+.help-section .hint {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+.plain-list {
+  padding-left: 1.25em;
+}
+
+.plain-list li {
+  margin-bottom: 8px;
+}
+
+.help-section code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--panel-header);
+  border: 1px solid var(--border);
+}
+
+/* Visual operation flow */
+.flow {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.flow-step {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.flow-num {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.flow-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+
+.flow-card h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.flow-card ul {
+  margin: 8px 0 0;
+  padding-left: 1.2em;
+}
+
+.flow-card li {
+  margin-bottom: 4px;
+}
+
+.flow-arrow {
+  list-style: none;
+  text-align: center;
+  color: var(--accent);
+  font-size: 1.25rem;
+  font-weight: 700;
+  padding: 6px 0 6px 40px;
+  line-height: 1;
+}
+
+.flow-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .flow-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.flow-split > div {
+  padding: 10px 12px;
+  background: var(--panel-header);
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+}
+
+.flow-diagram {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  padding: 14px 16px;
+  background: var(--panel-header);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.flow-diagram .chip {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.flow-diagram .arrow {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Model tables */
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0 14px;
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.help-table th,
+.help-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.help-table th {
+  width: 7.5em;
+  color: var(--text-sub);
+  font-weight: 600;
+  background: var(--panel-header);
+}
+
+.help-table tr:last-child th,
+.help-table tr:last-child td {
+  border-bottom: none;
+}
+
+.help-table.compare thead th {
+  width: auto;
+  background: var(--panel-header);
+  color: var(--text-sub);
+  font-size: 12px;
+}
+
+.help-table.compare td {
+  font-size: 13px;
+}
+
+.help-footer {
+  margin-top: 48px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.help-footer p {
+  margin: 0;
+}

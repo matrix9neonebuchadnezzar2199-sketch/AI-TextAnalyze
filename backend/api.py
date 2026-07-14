@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import traceback
+from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from backend.lang_detect import detect_language, lang_display_name
 from backend.model_manager import ModelManager
@@ -18,13 +20,59 @@ logger = logging.getLogger(__name__)
 class Api:
     """JavaScript-callable API (``pywebview.api.*``)."""
 
-    def __init__(self, model_manager: ModelManager | None = None) -> None:
+    def __init__(
+        self,
+        model_manager: ModelManager | None = None,
+        *,
+        help_html: Path | str | None = None,
+    ) -> None:
         self._manager = model_manager or ModelManager()
         self._window: Any = None
+        self._help_window: Any = None
+        self._help_html = Path(help_html) if help_html else None
         self._shutdown_done = False
 
     def set_window(self, window: Any) -> None:
         self._window = window
+
+    def open_help(self, theme: str = "dark") -> dict[str, Any]:
+        """Open beginner help in a separate webview window."""
+        if self._help_html is None or not self._help_html.is_file():
+            return self._err("ヘルプファイルが見つかりません")
+        theme_q = "light" if theme == "light" else "dark"
+        # file URI + query でテーマを渡す（localStorage はウィンドウ間で共有されない場合がある）
+        url = f"{self._help_html.resolve().as_uri()}?theme={quote(theme_q)}"
+        try:
+            import webview
+
+            if self._help_window is not None:
+                try:
+                    self._help_window.show()
+                    return self._ok(reused=True)
+                except Exception:
+                    logger.debug("help window reuse failed; creating new", exc_info=True)
+                    self._help_window = None
+
+            self._help_window = webview.create_window(
+                title="AI-TextAnalyze ヘルプ",
+                url=url,
+                width=920,
+                height=820,
+                min_size=(640, 480),
+            )
+
+            def _clear_help_ref() -> None:
+                self._help_window = None
+
+            try:
+                self._help_window.events.closed += _clear_help_ref
+            except Exception:
+                logger.debug("help closed handler not attached", exc_info=True)
+
+            return self._ok(opened=True)
+        except Exception as exc:
+            logger.exception("open_help failed")
+            return self._err(str(exc))
 
     def shutdown(self) -> dict[str, Any]:
         """Release loaded models. Safe to call multiple times on exit."""
