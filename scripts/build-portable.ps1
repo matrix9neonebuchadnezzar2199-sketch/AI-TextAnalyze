@@ -5,13 +5,30 @@
 #   dist/AI-TextAnalyze/runtime/   (DLLs / Python / frontend — do not edit)
 
 param(
-    [string]$Python = "python",
+    [string]$Python = "",
     [switch]$SkipModels
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
+
+# 既定はプロジェクト venv（システム python には pywebview が無いことがある）
+if (-not $Python) {
+    $VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
+    if (Test-Path $VenvPython) {
+        $Python = $VenvPython
+    }
+    else {
+        $Python = "python"
+    }
+}
+
+Write-Host "Using Python: $Python"
+& $Python -c "import webview; print('webview OK:', webview.__file__)"
+if ($LASTEXITCODE -ne 0) {
+    throw "pywebview is not installed in this Python. Run: $Python -m pip install -r requirements.txt"
+}
 
 Write-Host "Installing PyInstaller if needed..."
 & $Python -m pip install "pyinstaller>=6.3" --quiet
@@ -46,7 +63,10 @@ Write-Host "Building onedir AI-TextAnalyze (exe + model/ + runtime/)..."
     --add-data "frontend;frontend" `
     --add-data "assets;assets" `
     @IconArgs `
+    --collect-all webview `
     --hidden-import=webview `
+    --hidden-import=webview.platforms `
+    --hidden-import=webview.platforms.edgechromium `
     --hidden-import=backend.api `
     --hidden-import=backend.model_manager `
     --hidden-import=backend.ner_engine `
@@ -61,6 +81,12 @@ if ($LASTEXITCODE -ne 0) {
 if (-not (Test-Path (Join-Path $DistDir "AI-TextAnalyze.exe"))) {
     throw "Expected onedir exe not found: $DistDir\AI-TextAnalyze.exe"
 }
+
+$WebviewInRuntime = Get-ChildItem (Join-Path $DistDir "runtime") -Filter "*webview*" -Recurse -ErrorAction SilentlyContinue
+if (-not $WebviewInRuntime) {
+    throw "webview was not bundled into runtime/. Aborting."
+}
+Write-Host ("Bundled webview entries: {0}" -f $WebviewInRuntime.Count)
 
 $ModelSrc = Join-Path $Root "model"
 $ModelDst = Join-Path $DistDir "model"
