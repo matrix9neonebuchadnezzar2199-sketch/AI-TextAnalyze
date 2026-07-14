@@ -46,15 +46,14 @@ python scripts/run-user-story-tests.py
 
 ## ポータブル配布
 
-`.\scripts\build-portable.ps1` の成果物（`dist/AI-TextAnalyze/`）トップは次の3つだけです。
+`.\scripts\build-portable.ps1` の成果物（`dist/AI-TextAnalyze/`）トップは次の2つだけです。
 
 | 名前 | 役割 |
 |------|------|
-| `AI-TextAnalyze.exe` | 起動 |
-| `model/` | NER / MT モデル（必須・exe 横） |
-| `runtime/` | 依存ランタイム（触らなくてよい） |
+| `AI-TextAnalyze.exe` | 起動（onefile） |
+| `models/` | NER / MT モデル（必須・exe 横） |
 
-onefile は毎回展開で起動が遅いため、onedir + `runtime/` 分離を採用しています。
+初回起動は展開のため少し時間がかかることがあります。UI にロード中表示が出ます。
 
 ## ライセンス注意
 

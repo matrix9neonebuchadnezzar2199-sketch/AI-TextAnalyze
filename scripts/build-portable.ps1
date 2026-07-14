@@ -1,8 +1,7 @@
-# PyInstaller onedir portable build for AI-TextAnalyze
-# Fast cold start (no onefile unpack). Top-level layout:
+# PyInstaller onefile portable build for AI-TextAnalyze
+# Distribution top-level (only these two):
 #   dist/AI-TextAnalyze/AI-TextAnalyze.exe
-#   dist/AI-TextAnalyze/model/
-#   dist/AI-TextAnalyze/runtime/   (DLLs / Python / frontend — do not edit)
+#   dist/AI-TextAnalyze/models/
 
 param(
     [string]$Python = "",
@@ -46,17 +45,20 @@ else {
 $DistDir = Join-Path $Root "dist\AI-TextAnalyze"
 $ModelStaging = Join-Path $Root "dist\_model_staging"
 
-# Preserve existing model/ if re-building into the same folder
-if ((Test-Path (Join-Path $DistDir "model")) -and -not (Test-Path $ModelStaging)) {
-    Write-Host "Staging existing dist model/..."
-    Move-Item (Join-Path $DistDir "model") $ModelStaging -Force
+# Preserve existing models/ or legacy model/ when rebuilding
+foreach ($name in @("models", "model")) {
+    $existing = Join-Path $DistDir $name
+    if ((Test-Path $existing) -and -not (Test-Path $ModelStaging)) {
+        Write-Host "Staging existing dist $name/..."
+        Move-Item $existing $ModelStaging -Force
+        break
+    }
 }
 
-Write-Host "Building onedir AI-TextAnalyze (exe + model/ + runtime/)..."
+Write-Host "Building onefile AI-TextAnalyze.exe (models/ beside exe)..."
 & $Python -m PyInstaller `
     --name AI-TextAnalyze `
-    --onedir `
-    --contents-directory runtime `
+    --onefile `
     --windowed `
     --noconfirm `
     --clean `
@@ -78,32 +80,33 @@ if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller failed with exit code $LASTEXITCODE"
 }
 
-if (-not (Test-Path (Join-Path $DistDir "AI-TextAnalyze.exe"))) {
-    throw "Expected onedir exe not found: $DistDir\AI-TextAnalyze.exe"
+$BuiltExe = Join-Path $Root "dist\AI-TextAnalyze.exe"
+if (-not (Test-Path $BuiltExe)) {
+    throw "Expected onefile exe not found: $BuiltExe"
 }
 
-$WebviewInRuntime = Get-ChildItem (Join-Path $DistDir "runtime") -Filter "*webview*" -Recurse -ErrorAction SilentlyContinue
-if (-not $WebviewInRuntime) {
-    throw "webview was not bundled into runtime/. Aborting."
+if (Test-Path $DistDir) {
+    Remove-Item $DistDir -Recurse -Force
 }
-Write-Host ("Bundled webview entries: {0}" -f $WebviewInRuntime.Count)
+New-Item -ItemType Directory -Path $DistDir | Out-Null
+Move-Item $BuiltExe (Join-Path $DistDir "AI-TextAnalyze.exe") -Force
 
 $ModelSrc = Join-Path $Root "model"
-$ModelDst = Join-Path $DistDir "model"
+$ModelDst = Join-Path $DistDir "models"
 
 if (-not $SkipModels) {
     if (Test-Path $ModelStaging) {
-        Write-Host "Restoring staged model/..."
+        Write-Host "Restoring staged models/..."
         Move-Item $ModelStaging $ModelDst -Force
     }
     elseif (Test-Path $ModelSrc) {
-        Write-Host "Copying model/ next to exe (this may take a while)..."
+        Write-Host "Copying model/ -> models/ next to exe (this may take a while)..."
         & robocopy $ModelSrc $ModelDst /E /NFL /NDL /NJH /NJS /nc /ns /np
         if ($LASTEXITCODE -ge 8) {
             throw "robocopy failed with exit code $LASTEXITCODE"
         }
         $global:LASTEXITCODE = 0
-        Write-Host "model/ copied to $ModelDst"
+        Write-Host "models/ copied to $ModelDst"
     }
     else {
         Write-Warning "model/ not found — place models next to the exe before running."
@@ -113,9 +116,15 @@ elseif (Test-Path $ModelStaging) {
     Move-Item $ModelStaging $ModelDst -Force
 }
 
+$Top = @(Get-ChildItem $DistDir | ForEach-Object { $_.Name })
+$Unexpected = $Top | Where-Object { $_ -notin @("AI-TextAnalyze.exe", "models") }
+if ($Unexpected) {
+    Write-Warning ("Unexpected top-level entries: {0}" -f ($Unexpected -join ", "))
+}
+
 Write-Host ""
 Write-Host "Build complete: dist/AI-TextAnalyze/"
-Write-Host "Top-level: AI-TextAnalyze.exe + model/ + runtime/"
+Write-Host "Top-level: AI-TextAnalyze.exe + models/"
 Get-ChildItem $DistDir | ForEach-Object {
     $kind = if ($_.PSIsContainer) { "[dir]" } else { "[file]" }
     Write-Host ("  {0} {1}" -f $kind, $_.Name)

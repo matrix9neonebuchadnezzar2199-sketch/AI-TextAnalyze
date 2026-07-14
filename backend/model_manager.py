@@ -30,7 +30,7 @@ class ActiveEngine(str, Enum):
 
 @dataclass(frozen=True)
 class DetectedModel:
-    """A model folder discovered under ``model/``."""
+    """A model folder discovered under ``models/`` (or legacy ``model/``)."""
 
     kind: ModelKind
     name: str
@@ -45,8 +45,19 @@ def app_root() -> Path:
 
 
 def default_model_dir() -> Path:
-    """Resolve the model directory next to the app root."""
-    return app_root() / "model"
+    """Resolve model directory next to the app root.
+
+    Prefers ``models/`` (portable layout). Falls back to legacy ``model/``
+    for existing developer checkouts.
+    """
+    root = app_root()
+    preferred = root / "models"
+    legacy = root / "model"
+    if preferred.is_dir():
+        return preferred
+    if legacy.is_dir():
+        return legacy
+    return preferred
 
 
 def _has_ct2_model(folder: Path) -> bool:
@@ -216,7 +227,7 @@ class ModelManager:
         if meta is None:
             raise FileNotFoundError(
                 f"NER model not found under {self._model_dir}. "
-                "Place GLiNER ONNX files (model.onnx, tokenizer.json) in model/."
+                "Place GLiNER ONNX files (model.onnx, tokenizer.json) in models/."
             )
 
         logger.info("Loading NER model: %s", meta.name)

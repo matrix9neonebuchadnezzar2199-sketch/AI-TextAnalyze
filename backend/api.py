@@ -116,7 +116,7 @@ class Api:
 
             spec = get_mt_spec(model_id)
             return self._err(
-                f"{spec.label} が model/{spec.folder}/ にありません。"
+                f"{spec.label} が models/{spec.folder}/ にありません。"
                 f" python scripts/download-models.py --mt {model_id} で取得してください。"
             )
 
@@ -185,7 +185,7 @@ class Api:
         if not source and not target:
             return self._err("本文が空です")
         if self._manager.ner_model() is None:
-            return self._err("NER モデルが見つかりません。model/ に GLiNER ONNX を配置してください。")
+            return self._err("NER モデルが見つかりません。models/ に GLiNER ONNX を配置してください。")
 
         try:
             if not self._manager.ner_is_loaded():
@@ -240,7 +240,7 @@ class Api:
         if not (text or "").strip():
             return self._err("本文が空です")
         if self._manager.mt_model() is None:
-            return self._err("翻訳モデルが見つかりません。model/ に NLLB CT2 を配置してください。")
+            return self._err("翻訳モデルが見つかりません。models/ に NLLB CT2 を配置してください。")
 
         try:
             resolved_src = src
