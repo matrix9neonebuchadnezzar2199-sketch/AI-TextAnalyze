@@ -1,8 +1,8 @@
 # PyInstaller onedir portable build for AI-TextAnalyze
-# Fast cold start (no onefile unpack). Layout:
+# Fast cold start (no onefile unpack). Top-level layout:
 #   dist/AI-TextAnalyze/AI-TextAnalyze.exe
-#   dist/AI-TextAnalyze/<runtime files beside exe>  (--contents-directory .)
-#   dist/AI-TextAnalyze/model/   (copied unless -SkipModels)
+#   dist/AI-TextAnalyze/model/
+#   dist/AI-TextAnalyze/runtime/   (DLLs / Python / frontend — do not edit)
 
 param(
     [string]$Python = "python",
@@ -35,11 +35,11 @@ if ((Test-Path (Join-Path $DistDir "model")) -and -not (Test-Path $ModelStaging)
     Move-Item (Join-Path $DistDir "model") $ModelStaging -Force
 }
 
-Write-Host "Building onedir AI-TextAnalyze (fast start, no _internal/)..."
+Write-Host "Building onedir AI-TextAnalyze (exe + model/ + runtime/)..."
 & $Python -m PyInstaller `
     --name AI-TextAnalyze `
     --onedir `
-    --contents-directory . `
+    --contents-directory runtime `
     --windowed `
     --noconfirm `
     --clean `
@@ -89,5 +89,8 @@ elseif (Test-Path $ModelStaging) {
 
 Write-Host ""
 Write-Host "Build complete: dist/AI-TextAnalyze/"
-Write-Host "Layout: AI-TextAnalyze.exe + runtime files + model/  (fast start, no onefile unpack)"
-Get-ChildItem $DistDir -Name | Select-Object -First 20 | ForEach-Object { Write-Host ("  - {0}" -f $_) }
+Write-Host "Top-level: AI-TextAnalyze.exe + model/ + runtime/"
+Get-ChildItem $DistDir | ForEach-Object {
+    $kind = if ($_.PSIsContainer) { "[dir]" } else { "[file]" }
+    Write-Host ("  {0} {1}" -f $kind, $_.Name)
+}

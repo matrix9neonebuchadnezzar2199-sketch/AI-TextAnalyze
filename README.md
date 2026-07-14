@@ -44,6 +44,18 @@ python scripts/run-user-story-tests.py
 .\scripts\build-portable.ps1
 ```
 
+## ポータブル配布
+
+`.\scripts\build-portable.ps1` の成果物（`dist/AI-TextAnalyze/`）トップは次の3つだけです。
+
+| 名前 | 役割 |
+|------|------|
+| `AI-TextAnalyze.exe` | 起動 |
+| `model/` | NER / MT モデル（必須・exe 横） |
+| `runtime/` | 依存ランタイム（触らなくてよい） |
+
+onefile は毎回展開で起動が遅いため、onedir + `runtime/` 分離を採用しています。
+
 ## ライセンス注意
 
 - **NLLB-200** は CC-BY-NC（非商用）です。商用利用は不可。
