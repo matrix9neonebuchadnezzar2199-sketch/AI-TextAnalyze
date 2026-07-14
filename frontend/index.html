@@ -69,6 +69,7 @@
       <div class="panel-foot source-foot">
         <button class="btn ghost" id="btnAttach" type="button" onclick="attachFile()">PDF / テキスト添付</button>
         <button class="btn ghost" type="button" onclick="clearAll()">クリア</button>
+        <button class="btn ghost" id="btnCopySource" type="button" onclick="copySource()">コピー</button>
         <span class="hint">自動言語判定: <b id="detLang">—</b></span>
       </div>
     </div>
@@ -110,6 +111,9 @@
           <div id="targetView" class="text-surface target-surface" aria-label="翻訳結果">
             <div class="target-empty">翻訳結果がここに表示されます…</div>
           </div>
+        </div>
+        <div class="panel-foot translate-foot">
+          <button class="btn ghost" id="btnCopyTarget" type="button" onclick="copyTarget()">コピー</button>
         </div>
       </div>
 

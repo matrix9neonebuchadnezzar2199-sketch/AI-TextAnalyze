@@ -615,6 +615,39 @@ function copyRaw() {
   status("リストをコピーしました");
 }
 
+async function copyTextToClipboard(text, emptyMsg, okMsg) {
+  const value = (text || "").trim();
+  if (!value) {
+    status(emptyMsg);
+    return;
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = value;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    status(okMsg);
+  } catch (err) {
+    status("コピーに失敗しました: " + String(err));
+  }
+}
+
+function copySource() {
+  copyTextToClipboard(getSourceText(), "本文が空です", "本文をコピーしました");
+}
+
+function copyTarget() {
+  copyTextToClipboard(getTargetPlainText(), "翻訳結果が空です", "翻訳をコピーしました");
+}
+
 async function translateText() {
   const src = getSourceText().trim();
   if (!src) {
